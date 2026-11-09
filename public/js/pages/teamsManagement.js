@@ -1,421 +1,359 @@
 // Teams Management Page
 class TeamsManagementPage {
-    static render() {
-        return `
-            <div class="min-h-screen bg-gray-50 flex">
-                ${Sidebar.render()}
-                
-                <div class="flex-1 ml-64">
-                    <div class="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-                        <div class="flex justify-between items-center">
-                            <h1 class="text-2xl font-bold text-gray-900">Teams Management</h1>
-                            <div class="flex items-center space-x-4">
-                                <button 
-                                    id="deleteAllTeamsBtn"
-                                    onclick="TeamsManagementPage.showDeleteAllModal()"
-                                    class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
-                                >
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                    </svg>
-                                    <span>Delete All Teams</span>
-                                </button>
-                                <span class="text-sm text-gray-500" id="teamsCount">Loading...</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="p-6">
-                        <!-- Search and Filters -->
-                        <div class="bg-white rounded-lg shadow mb-6 p-4">
-                            <div class="flex flex-wrap gap-4 items-center">
-                                <div class="flex-1 min-w-64">
-                                    <input 
-                                        type="text" 
-                                        id="searchTeams" 
-                                        placeholder="Search teams by name, challenge, solution, or stage..."
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        onkeyup="TeamsManagementPage.filterTeams()"
-                                    />
-                                </div>
-                                <div>
-                                    <select 
-                                        id="filterByPanel" 
-                                        class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        onchange="TeamsManagementPage.filterTeams()"
-                                    >
-                                        <option value="">All Panels</option>
-                                        <option value="stage1">Stage 1 Panels</option>
-                                        <option value="stage2">Stage 2 Panels</option>
-                                        <option value="unassigned">Unassigned</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
+  static PER_PAGE = 25;
+  static CONFIRM_PHRASE = 'DELETE ALL TEAMS';
+  static SOLUTION_BADGES = { web: 'badge-blue', mobile: 'badge-green', ai: 'badge-purple' };
+  static rows = [];
+  static filtered = [];
+  static page = 1;
+  static onSearch = UI.debounce(() => TeamsManagementPage.applyFilters(), 200);
 
-                        <!-- Teams Table -->
-                        <div class="bg-white rounded-lg shadow overflow-hidden">
-                            <div class="overflow-x-auto">
-                                <table class="min-w-full divide-y divide-gray-200">
-                                    <thead class="bg-gray-50">
-                                        <tr>
-                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team Name</th>
-                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Challenge</th>
-                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Solution</th>
-                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Panel Assignments</th>
-                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="teamsTableBody" class="bg-white divide-y divide-gray-200">
-                                        <!-- Teams will be loaded here -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+  static render() {
+    return Layout.admin({
+      title: 'Teams',
+      subtitle: 'Search, review and manage registered teams',
+      actions: `
+        <a href="/admin/upload-data-stream" onclick="navigateToPage(event, '/admin/upload-data-stream')" class="btn btn-secondary">
+          ${Sidebar.icon('upload', 'h-4 w-4')}
+          Import Teams
+        </a>
+        <button id="deleteAllTeamsBtn" onclick="TeamsManagementPage.showDeleteAllModal()" class="btn btn-danger" disabled>
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+          Delete All Teams
+        </button>
+      `,
+      content: `
+        <div id="teamsStats" class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          ${`<div class="stat-card"><div class="skeleton h-11 w-11"></div><div class="flex-1 space-y-2"><div class="skeleton h-3 w-20"></div><div class="skeleton h-6 w-12"></div></div></div>`.repeat(4)}
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
+              <div class="relative flex-1">
+                <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"></path></svg>
+                <input id="searchTeams" type="search" autocomplete="off" oninput="TeamsManagementPage.onSearch()"
+                  placeholder="Search team, leader, email, challenge or panel..." class="input pl-9" />
+              </div>
+              <select id="filterByPanel" onchange="TeamsManagementPage.applyFilters()" class="input sm:w-56">
+                <option value="">All teams</option>
+                <option value="stage1">Assigned to a Stage 1 panel</option>
+                <option value="stage2">In Stage 2 panels</option>
+                <option value="unassigned">Unassigned</option>
+              </select>
+              <p id="teamsCount" class="whitespace-nowrap text-sm text-slate-500">Loading teams...</p>
             </div>
+          </div>
+          <div id="teamsTable">${TeamsManagementPage.tableHtml(UI.skeletonRows(5, 8))}</div>
+        </div>
 
-            <!-- Delete Confirmation Modal -->
-            <div id="deleteModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
-                <div class="flex items-center justify-center min-h-screen p-4">
-                    <div class="bg-white rounded-lg max-w-md w-full">
-                        <div class="px-6 py-4 border-b border-gray-200">
-                            <h3 class="text-lg font-medium text-gray-900">Delete Team</h3>
-                        </div>
-                        <div class="p-6">
-                            <p class="text-gray-600 mb-4">Are you sure you want to delete this team? This action cannot be undone.</p>
-                            <div class="flex justify-end space-x-3">
-                                <button 
-                                    onclick="TeamsManagementPage.hideDeleteModal()"
-                                    class="px-4 py-2 text-gray-600 hover:text-gray-800"
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    id="confirmDeleteBtn"
-                                    class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                                >
-                                    Delete
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        <div id="deleteAllModal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/50 p-4"
+          onclick="if (event.target === this) TeamsManagementPage.hideDeleteAllModal()"
+          onkeydown="if (event.key === 'Escape') TeamsManagementPage.hideDeleteAllModal()">
+          <form class="card w-full max-w-lg" role="dialog" aria-modal="true" aria-labelledby="deleteAllTitle"
+            onsubmit="event.preventDefault(); TeamsManagementPage.deleteAllTeams()">
+            <div class="flex items-start gap-4 p-6">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <h3 id="deleteAllTitle" class="text-lg font-semibold text-slate-900">Delete all teams?</h3>
+                <p class="mt-1 text-sm text-slate-600">This permanently deletes <strong id="deleteAllCount" class="text-slate-900">all</strong> teams together with:</p>
+                <ul class="mt-2 list-disc space-y-0.5 pl-5 text-sm text-slate-600">
+                  <li>All Stage 1 and Stage 2 scores</li>
+                  <li>All team assignments on panels</li>
+                </ul>
+                <p class="mt-3 text-sm font-medium text-red-700">This action cannot be undone.</p>
+                <label for="deleteAllConfirmInput" class="label mt-4">
+                  Type <span class="font-mono font-semibold text-red-600">${TeamsManagementPage.CONFIRM_PHRASE}</span> to confirm
+                </label>
+                <input id="deleteAllConfirmInput" type="text" autocomplete="off" spellcheck="false"
+                  placeholder="${TeamsManagementPage.CONFIRM_PHRASE}" class="input font-mono"
+                  oninput="TeamsManagementPage.validateDeleteAllInput()" />
+              </div>
             </div>
-
-            <!-- Delete All Teams Confirmation Modal -->
-            <div id="deleteAllModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
-                <div class="flex items-center justify-center min-h-screen p-4">
-                    <div class="bg-white rounded-lg max-w-lg w-full">
-                        <div class="px-6 py-4 border-b border-gray-200">
-                            <div class="flex items-center">
-                                <svg class="w-6 h-6 text-red-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                                </svg>
-                                <h3 class="text-lg font-medium text-gray-900">⚠️ Delete ALL Teams</h3>
-                            </div>
-                        </div>
-                        <div class="p-6">
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                                <p class="text-red-800 font-medium mb-2">🚨 DANGER ZONE</p>
-                                <p class="text-red-700 text-sm">This will permanently delete:</p>
-                                <ul class="text-red-700 text-sm mt-2 ml-4 list-disc">
-                                    <li>All teams and their data</li>
-                                    <li>All associated scores and judgments</li>
-                                    <li>All panel assignments</li>
-                                </ul>
-                            </div>
-                            <p class="text-gray-600 mb-4">
-                                <strong>This action cannot be undone!</strong> 
-                                Are you absolutely sure you want to delete all teams?
-                            </p>
-                            <div class="mb-4">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">
-                                    Type "DELETE ALL TEAMS" to confirm:
-                                </label>
-                                <input 
-                                    type="text" 
-                                    id="deleteAllConfirmInput"
-                                    placeholder="DELETE ALL TEAMS"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                                    onkeyup="TeamsManagementPage.validateDeleteAllInput()"
-                                />
-                            </div>
-                            <div class="flex justify-end space-x-3">
-                                <button 
-                                    onclick="TeamsManagementPage.hideDeleteAllModal()"
-                                    class="px-4 py-2 text-gray-600 hover:text-gray-800"
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    id="confirmDeleteAllBtn"
-                                    onclick="TeamsManagementPage.deleteAllTeams()"
-                                    class="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                                    disabled
-                                >
-                                    🗑️ Delete All Teams
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div class="flex justify-end gap-3 rounded-b-xl border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <button type="button" onclick="TeamsManagementPage.hideDeleteAllModal()" class="btn btn-secondary">Cancel</button>
+              <button type="submit" id="confirmDeleteAllBtn" class="btn btn-danger" disabled>Delete all teams</button>
             </div>
-        `;
-    }
+          </form>
+        </div>
+      `,
+    });
+  }
 
-    static afterRender() {
-        TeamsManagementPage.loadTeams();
-        TeamsManagementPage.loadPanels();
-    }
+  static afterRender() {
+    TeamsManagementPage.rows = [];
+    TeamsManagementPage.filtered = [];
+    TeamsManagementPage.page = 1;
+    TeamsManagementPage.load();
+  }
 
-    static async loadTeams() {
-        try {
-            const response = await fetch('/api/teams', {
-                headers: {
-                    'Authorization': `Bearer ${authService.token}`
-                }
-            });
-            
-            if (response.ok) {
-                const teams = await response.json();
-                TeamsManagementPage.teams = teams;
-                TeamsManagementPage.renderTeamsTable(teams);
-                document.getElementById('teamsCount').textContent = `${teams.length} teams`;
-            }
-        } catch (error) {
-            console.error('Failed to load teams:', error);
-        }
-    }
-
-    static async loadPanels() {
-        try {
-            const response = await fetch('/api/panels', {
-                headers: {
-                    'Authorization': `Bearer ${authService.token}`
-                }
-            });
-            
-            if (response.ok) {
-                const panels = await response.json();
-                TeamsManagementPage.panels = panels;
-            }
-        } catch (error) {
-            console.error('Failed to load panels:', error);
-        }
-    }
-
-    static renderTeamsTable(teams) {
-        const tbody = document.getElementById('teamsTableBody');
-        
-        if (teams.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="5" class="px-6 py-8 text-center text-gray-500">
-                        <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
-                        </svg>
-                        <p>No teams found</p>
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-
-        tbody.innerHTML = teams.map(team => TeamsManagementPage.renderTeamRow(team)).join('');
-    }
-
-    static renderTeamRow(team) {
-        const stage1Panel = TeamsManagementPage.getTeamPanel(team._id, 1);
-        const stage2Panel = TeamsManagementPage.getTeamPanel(team._id, 2);
-        
-        return `
-            <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4">
-                    <div class="text-sm font-medium text-gray-900">${team.name}</div>
-                </td>
-                <td class="px-6 py-4">
-                    <div class="text-sm text-gray-900">${team.challenge}</div>
-                </td>
-                <td class="px-6 py-4">
-                    <div class="text-sm text-gray-600">${team.actualSolution || 'No solution provided'}</div>
-                </td>
-                <td class="px-6 py-4">
-                    <div class="space-y-1">
-                        <div class="text-xs">
-                            <span class="font-medium">Stage 1:</span> 
-                            ${stage1Panel ? `<span class="text-blue-600">${stage1Panel.name}</span>` : '<span class="text-gray-400">Not assigned</span>'}
-                        </div>
-                        <div class="text-xs">
-                            <span class="font-medium">Stage 2:</span> 
-                            ${stage2Panel ? `<span class="text-purple-600">${stage2Panel.name}</span>` : '<span class="text-gray-400">Not assigned</span>'}
-                        </div>
-                    </div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">
-                    <button 
-                        onclick="router.navigate('/admin/teams/${team._id}')"
-                        class="text-blue-600 hover:text-blue-900 mr-3"
-                    >
-                        View
-                    </button>
-                    <button 
-                        onclick="TeamsManagementPage.deleteTeam('${team._id}', '${team.name}')"
-                        class="text-red-600 hover:text-red-900"
-                    >
-                        Delete
-                    </button>
-                </td>
+  static tableHtml(body) {
+    return `
+      <div class="relative overflow-x-auto">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th>Challenge</th>
+              <th>Solution</th>
+              <th>Panels</th>
+              <th><span class="sr-only">Actions</span></th>
             </tr>
-        `;
-    }
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+    `;
+  }
 
-    static getTeamPanel(teamId, stage) {
-        if (!TeamsManagementPage.panels) return null;
-        return TeamsManagementPage.panels.find(panel => 
-            panel.stage === stage && panel.teams?.includes(teamId)
-        );
-    }
+  static async load() {
+    const table = document.getElementById('teamsTable');
+    if (!table) return;
+    table.innerHTML = TeamsManagementPage.tableHtml(UI.skeletonRows(5, 8));
+    document.getElementById('teamsCount').textContent = 'Loading teams...';
 
+    try {
+      const [teams, panels] = await Promise.all([UI.api('/api/teams'), UI.api('/api/panels')]);
 
-    static filterTeams() {
-        const searchTerm = document.getElementById('searchTeams').value.toLowerCase();
-        const panelFilter = document.getElementById('filterByPanel').value;
-        
-        if (!TeamsManagementPage.teams) return;
-        
-        let filteredTeams = TeamsManagementPage.teams.filter(team => {
-            const stage1Panel = TeamsManagementPage.getTeamPanel(team._id, 1);
-            const stage2Panel = TeamsManagementPage.getTeamPanel(team._id, 2);
-            
-            const matchesSearch = 
-                team.name.toLowerCase().includes(searchTerm) ||
-                team.challenge.toLowerCase().includes(searchTerm) ||
-                (team.actualSolution && team.actualSolution.toLowerCase().includes(searchTerm)) ||
-                team.leaderName.toLowerCase().includes(searchTerm) ||
-                team.leaderEmail.toLowerCase().includes(searchTerm) ||
-                (stage1Panel && stage1Panel.name.toLowerCase().includes(searchTerm)) ||
-                (stage2Panel && stage2Panel.name.toLowerCase().includes(searchTerm)) ||
-                'stage1'.includes(searchTerm) ||
-                'stage2'.includes(searchTerm);
-            
-            let matchesPanel = true;
-            if (panelFilter === 'stage1') {
-                matchesPanel = TeamsManagementPage.getTeamPanel(team._id, 1) !== null;
-            } else if (panelFilter === 'stage2') {
-                matchesPanel = TeamsManagementPage.getTeamPanel(team._id, 2) !== null;
-            } else if (panelFilter === 'unassigned') {
-                matchesPanel = !TeamsManagementPage.getTeamPanel(team._id, 1) && !TeamsManagementPage.getTeamPanel(team._id, 2);
-            }
-            
-            return matchesSearch && matchesPanel;
-        });
-        
-        TeamsManagementPage.renderTeamsTable(filteredTeams);
-    }
-
-
-    static deleteTeam(teamId, teamName) {
-        document.getElementById('deleteModal').classList.remove('hidden');
-        document.getElementById('confirmDeleteBtn').onclick = () => TeamsManagementPage.confirmDelete(teamId);
-    }
-
-    static async confirmDelete(teamId) {
-        try {
-            const response = await fetch(`/api/teams/${teamId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${authService.token}`
-                }
-            });
-            
-            if (response.ok) {
-                TeamsManagementPage.hideDeleteModal();
-                TeamsManagementPage.loadTeams(); // Reload the table
-            } else {
-                alert('Failed to delete team');
-            }
-        } catch (error) {
-            console.error('Failed to delete team:', error);
-            alert('Failed to delete team');
+      const assignments = new Map();
+      for (const panel of panels) {
+        const stage = Number(panel.stage);
+        for (const t of panel.teams || []) {
+          if (!t) continue;
+          const id = t._id || t;
+          if (!assignments.has(id)) assignments.set(id, { stage1: null, stage2: [] });
+          if (stage === 1) assignments.get(id).stage1 = panel;
+          else if (stage === 2) assignments.get(id).stage2.push(panel);
         }
+      }
+
+      TeamsManagementPage.rows = teams.map((team) => {
+        const { stage1, stage2 } = assignments.get(team._id) || { stage1: null, stage2: [] };
+        const search = [
+          team.name,
+          team.challenge,
+          team.actualSolution,
+          team.leaderName,
+          team.leaderEmail,
+          stage1?.name,
+          ...stage2.map((p) => p.awardType || p.name),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return { team, stage1, stage2, search };
+      });
+
+      TeamsManagementPage.renderStats();
+      TeamsManagementPage.applyFilters(false);
+    } catch (error) {
+      console.error('Failed to load teams:', error);
+      if (!document.getElementById('teamsTable')) return;
+      document.getElementById('teamsCount').textContent = '';
+      table.innerHTML = `
+        <div class="flex flex-col items-center px-6 py-12 text-center">
+          <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-500">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          </div>
+          <p class="text-sm font-medium text-slate-900">Couldn't load teams</p>
+          <p class="mt-1 text-sm text-slate-500">${UI.escape(error.message)}</p>
+          <button onclick="TeamsManagementPage.load()" class="btn btn-secondary mt-4">Try again</button>
+        </div>
+      `;
+    }
+  }
+
+  static renderStats() {
+    const container = document.getElementById('teamsStats');
+    if (!container) return;
+    const rows = TeamsManagementPage.rows;
+    const stats = [
+      ['Total teams', rows.length, 'teams', 'bg-blue-50 text-blue-600'],
+      ['Stage 1 assigned', rows.filter((r) => r.stage1).length, 'panels', 'bg-emerald-50 text-emerald-600'],
+      ['In Stage 2 panels', rows.filter((r) => r.stage2.length).length, 'rocket', 'bg-purple-50 text-purple-600'],
+      ['Unassigned', rows.filter((r) => !r.stage1 && !r.stage2.length).length, 'criteria', 'bg-amber-50 text-amber-600'],
+    ];
+    container.innerHTML = stats
+      .map(
+        ([label, value, icon, color]) => `
+        <div class="stat-card">
+          <div class="stat-icon ${color}">${Sidebar.icon(icon)}</div>
+          <div class="min-w-0">
+            <p class="stat-label truncate">${label}</p>
+            <p class="stat-value">${value.toLocaleString()}</p>
+          </div>
+        </div>`,
+      )
+      .join('');
+    document.getElementById('deleteAllTeamsBtn').disabled = rows.length === 0;
+  }
+
+  static applyFilters(resetPage = true) {
+    const term = (document.getElementById('searchTeams')?.value || '').trim().toLowerCase();
+    const tokens = term ? term.split(/\s+/) : [];
+    const matchesPanel = {
+      stage1: (r) => !!r.stage1,
+      stage2: (r) => r.stage2.length > 0,
+      unassigned: (r) => !r.stage1 && r.stage2.length === 0,
+    }[document.getElementById('filterByPanel')?.value];
+
+    TeamsManagementPage.filtered = TeamsManagementPage.rows.filter(
+      (r) => (!matchesPanel || matchesPanel(r)) && tokens.every((t) => r.search.includes(t)),
+    );
+    if (resetPage) TeamsManagementPage.page = 1;
+    TeamsManagementPage.renderTable();
+  }
+
+  static renderTable() {
+    const table = document.getElementById('teamsTable');
+    if (!table) return;
+    const { rows, filtered, PER_PAGE } = TeamsManagementPage;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+    const page = Math.min(Math.max(1, TeamsManagementPage.page), totalPages);
+    TeamsManagementPage.page = page;
+
+    document.getElementById('teamsCount').textContent =
+      filtered.length === rows.length
+        ? `${rows.length.toLocaleString()} teams`
+        : `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} teams`;
+
+    if (filtered.length === 0) {
+      table.innerHTML = rows.length
+        ? UI.emptyState('No teams match your filters', 'Try a different search term or filter.')
+        : UI.emptyState('No teams yet', 'Use "Import Teams" to upload your teams CSV.');
+      return;
     }
 
-    static hideDeleteModal() {
-        document.getElementById('deleteModal').classList.add('hidden');
-    }
+    const start = (page - 1) * PER_PAGE;
+    table.innerHTML =
+      TeamsManagementPage.tableHtml(
+        filtered.slice(start, start + PER_PAGE).map(TeamsManagementPage.rowHtml).join(''),
+      ) + UI.pagination({ page, perPage: PER_PAGE, total: filtered.length, onChange: 'TeamsManagementPage.goToPage' });
+  }
 
-    // Delete All Teams functionality
-    static showDeleteAllModal() {
-        document.getElementById('deleteAllModal').classList.remove('hidden');
-        document.getElementById('deleteAllConfirmInput').value = '';
-        document.getElementById('confirmDeleteAllBtn').disabled = true;
-    }
+  static rowHtml({ team, stage1, stage2 }) {
+    const href = `/admin/teams/${team._id}`;
+    const solution = team.actualSolution || '';
+    const stage2Names = stage2.map((p) => p.awardType || p.name);
+    const stage2Label = stage2.length === 1 ? stage2Names[0] : `${stage2.length} award panels`;
 
-    static hideDeleteAllModal() {
-        document.getElementById('deleteAllModal').classList.add('hidden');
-        document.getElementById('deleteAllConfirmInput').value = '';
-        document.getElementById('confirmDeleteAllBtn').disabled = true;
-    }
+    return `
+      <tr>
+        <td>
+          <div class="min-w-[11rem]">
+            <a href="${href}" onclick="navigateToPage(event, '${href}')" class="font-medium text-slate-900 hover:text-blue-600">${UI.escape(team.name)}</a>
+            ${team.leaderName ? `<p class="mt-0.5 text-xs text-slate-500">${UI.escape(team.leaderName)}</p>` : ''}
+          </div>
+        </td>
+        <td><p class="line-clamp-2 min-w-[10rem] max-w-xs">${UI.escape(team.challenge || '—')}</p></td>
+        <td>
+          ${solution
+            ? `<span class="badge ${TeamsManagementPage.SOLUTION_BADGES[solution.toLowerCase()] || 'badge-gray'}">${UI.escape(solution)}</span>`
+            : '<span class="text-slate-400">—</span>'}
+        </td>
+        <td>
+          <div class="flex min-w-[10rem] flex-wrap gap-1">
+            ${stage1
+              ? `<span class="badge badge-blue">S1 · ${UI.escape(stage1.name)}</span>`
+              : '<span class="badge badge-gray">S1 · Unassigned</span>'}
+            ${stage2.length
+              ? `<span class="badge badge-purple" title="${UI.escape(stage2Names.join(', '))}">S2 · ${UI.escape(stage2Label)}</span>`
+              : ''}
+          </div>
+        </td>
+        <td>
+          <div class="flex justify-end gap-1">
+            <button onclick="router.navigate('${href}')" class="btn btn-ghost btn-sm">View</button>
+            <button onclick="TeamsManagementPage.deleteTeam('${team._id}')" class="btn btn-ghost btn-sm text-red-600 hover:bg-red-50 hover:text-red-700">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
 
-    static validateDeleteAllInput() {
-        const input = document.getElementById('deleteAllConfirmInput');
-        const confirmBtn = document.getElementById('confirmDeleteAllBtn');
-        
-        if (input.value === 'DELETE ALL TEAMS') {
-            confirmBtn.disabled = false;
-            confirmBtn.classList.remove('disabled:bg-gray-400');
-            confirmBtn.classList.add('bg-red-600', 'hover:bg-red-700');
-        } else {
-            confirmBtn.disabled = true;
-            confirmBtn.classList.add('disabled:bg-gray-400');
-            confirmBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-        }
-    }
+  static goToPage(page) {
+    TeamsManagementPage.page = page;
+    TeamsManagementPage.renderTable();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
-    static async deleteAllTeams() {
-        const confirmBtn = document.getElementById('confirmDeleteAllBtn');
-        
-        // Show loading state
-        confirmBtn.disabled = true;
-        confirmBtn.innerHTML = `
-            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Deleting...
-        `;
+  static async deleteTeam(teamId) {
+    const row = TeamsManagementPage.rows.find((r) => r.team._id === teamId);
+    if (!row) return;
+    const confirmed = await UI.confirm({
+      title: 'Delete team?',
+      message: `"${row.team.name}" and all of its scores will be permanently deleted. This cannot be undone.`,
+      confirmText: 'Delete team',
+      danger: true,
+    });
+    if (!confirmed) return;
 
-        try {
-            const response = await fetch('/api/teams', {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${authService.token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            const result = await response.json();
-            
-            if (response.ok) {
-                TeamsManagementPage.hideDeleteAllModal();
-                
-                // Show success message
-                alert(`✅ Successfully deleted ${result.deletedCount} teams and all associated data!`);
-                
-                // Reload the teams table
-                TeamsManagementPage.loadTeams();
-            } else {
-                throw new Error(result.message || 'Failed to delete all teams');
-            }
-        } catch (error) {
-            console.error('Failed to delete all teams:', error);
-            alert(`❌ Failed to delete all teams: ${error.message}`);
-            
-            // Reset button state
-            confirmBtn.disabled = false;
-            confirmBtn.innerHTML = '🗑️ Delete All Teams';
-        }
+    try {
+      await UI.api(`/api/teams/${teamId}`, { method: 'DELETE' });
+      TeamsManagementPage.rows = TeamsManagementPage.rows.filter((r) => r !== row);
+      TeamsManagementPage.filtered = TeamsManagementPage.filtered.filter((r) => r !== row);
+      TeamsManagementPage.renderStats();
+      TeamsManagementPage.renderTable();
+      UI.toast(`Deleted "${row.team.name}"`, 'success');
+    } catch (error) {
+      console.error('Failed to delete team:', error);
+      UI.toast(`Failed to delete team: ${error.message}`, 'error');
     }
+  }
+
+  static showDeleteAllModal() {
+    if (!TeamsManagementPage.rows.length) return;
+    document.getElementById('deleteAllCount').textContent = TeamsManagementPage.rows.length.toLocaleString();
+    TeamsManagementPage.resetDeleteAllForm();
+    document.getElementById('deleteAllModal').classList.remove('hidden');
+    document.getElementById('deleteAllConfirmInput').focus();
+  }
+
+  static hideDeleteAllModal() {
+    document.getElementById('deleteAllModal')?.classList.add('hidden');
+    TeamsManagementPage.resetDeleteAllForm();
+  }
+
+  static resetDeleteAllForm() {
+    const input = document.getElementById('deleteAllConfirmInput');
+    if (!input) return;
+    input.value = '';
+    input.disabled = false;
+    const button = document.getElementById('confirmDeleteAllBtn');
+    button.disabled = true;
+    button.textContent = 'Delete all teams';
+  }
+
+  static validateDeleteAllInput() {
+    document.getElementById('confirmDeleteAllBtn').disabled =
+      document.getElementById('deleteAllConfirmInput').value.trim() !== TeamsManagementPage.CONFIRM_PHRASE;
+  }
+
+  static async deleteAllTeams() {
+    const input = document.getElementById('deleteAllConfirmInput');
+    const button = document.getElementById('confirmDeleteAllBtn');
+    if (input.value.trim() !== TeamsManagementPage.CONFIRM_PHRASE) return;
+
+    input.disabled = true;
+    button.disabled = true;
+    button.innerHTML = `
+      <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+      Deleting...
+    `;
+
+    try {
+      const result = await UI.api('/api/teams', { method: 'DELETE' });
+      TeamsManagementPage.hideDeleteAllModal();
+      UI.toast(`Deleted ${result?.deletedCount ?? 0} teams and all associated data`, 'success');
+      TeamsManagementPage.load();
+    } catch (error) {
+      console.error('Failed to delete all teams:', error);
+      UI.toast(`Failed to delete all teams: ${error.message}`, 'error');
+      input.disabled = false;
+      button.textContent = 'Delete all teams';
+      TeamsManagementPage.validateDeleteAllInput();
+    }
+  }
 }

@@ -1,485 +1,301 @@
 // Team Detail Page
 class TeamDetailPage {
   static render() {
-    return `
-            <div class="min-h-screen bg-gray-50 flex">
-                ${Sidebar.render()}
-                
-                <div class="flex-1 ml-64">
-                    <div class="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-                        <div class="flex justify-between items-center">
-                            <div class="flex items-center space-x-4">
-                                <button onclick="router.navigate('/admin/teams')" class="text-gray-600 hover:text-gray-900">
-                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                                    </svg>
-                                </button>
-                                <h1 id="teamName" class="text-2xl font-bold text-gray-900">Loading...</h1>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="p-6">
-                        <div id="teamContent">
-                            <div class="text-center py-12">
-                                <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                                <p class="mt-4 text-gray-600">Loading team details...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+    return Layout.admin({
+      title: '<span id="teamName">Team details</span>',
+      subtitle: '<span id="teamSubtitle">Loading...</span>',
+      actions: `
+        <a href="/admin/teams" onclick="navigateToPage(event, '/admin/teams')" class="btn btn-secondary">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+          Back to Teams
+        </a>
+      `,
+      content: `<div id="teamContent">${TeamDetailPage.skeletonHtml()}</div>`,
+    });
   }
 
   static afterRender() {
-    const pathParts = window.location.pathname.split('/');
-    const teamId = pathParts[pathParts.length - 1];
-    TeamDetailPage.loadTeamDetails(teamId);
+    const teamId = window.location.pathname.split('/').pop();
+    TeamDetailPage.load(teamId);
   }
 
-  static async loadTeamDetails(teamId) {
+  static skeletonHtml() {
+    const block = (lines) => `
+      <div class="card card-body space-y-3">
+        <div class="skeleton h-5 w-1/3"></div>
+        ${'<div class="skeleton h-4 w-full"></div>'.repeat(lines)}
+      </div>`;
+    return `
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div class="space-y-6 lg:col-span-2">${block(4)}${block(2)}</div>
+        <div class="space-y-6">${block(3)}${block(3)}</div>
+      </div>
+    `;
+  }
+
+  static async load(teamId) {
+    const content = document.getElementById('teamContent');
+    if (!content) return;
+    content.innerHTML = TeamDetailPage.skeletonHtml();
+
+    const optional = (path) =>
+      UI.api(path).catch((error) => {
+        console.error(`Failed to load ${path}:`, error);
+        return null;
+      });
+
     try {
-      // Load team data
-      const teamResponse = await fetch(`/api/teams/${teamId}`, {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
+      const id = encodeURIComponent(teamId);
+      const [team, panels, stage1Scores, stage2Scores] = await Promise.all([
+        UI.api(`/api/teams/${id}`),
+        optional('/api/panels'),
+        optional(`/api/scores/team/${id}/stage/1`),
+        optional(`/api/scores/team/${id}/stage/2`),
+      ]);
+      if (!document.getElementById('teamContent')) return;
 
-      if (!teamResponse.ok) {
-        throw new Error('Team not found');
-      }
-
-      const team = await teamResponse.json();
-
-      // Load panels to find assignments
-      const panelsResponse = await fetch('/api/panels', {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
-
-      let stage1Panel = null;
-      let stage2Panel = null;
-
-      if (panelsResponse.ok) {
-        const panels = await panelsResponse.json();
-        stage1Panel = panels.find(
-          (panel) => panel.stage === 1 && panel.teams?.includes(teamId),
-        );
-        stage2Panel = panels.find(
-          (panel) => panel.stage === 2 && panel.teams?.includes(teamId),
-        );
-      }
-
-      // Update page title
       document.getElementById('teamName').textContent = team.name;
-
-      // Render team details
-      TeamDetailPage.renderTeamDetails(team, stage1Panel, stage2Panel, teamId);
+      document.getElementById('teamSubtitle').textContent = team.challenge || '';
+      TeamDetailPage.renderTeam(team, panels, stage1Scores, stage2Scores);
     } catch (error) {
       console.error('Failed to load team details:', error);
-      document.getElementById('teamContent').innerHTML = `
-                <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-                    <svg class="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                    </svg>
-                    <h3 class="text-lg font-medium text-red-900 mb-2">Failed to Load Team</h3>
-                    <p class="text-red-700">${error.message}</p>
-                    <button onclick="router.navigate('/admin/teams')" class="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-                        Back to Teams
-                    </button>
-                </div>
-            `;
+      if (!document.getElementById('teamContent')) return;
+      document.getElementById('teamName').textContent = 'Team details';
+      document.getElementById('teamSubtitle').textContent = '';
+      content.innerHTML = `
+        <div class="card flex flex-col items-center px-6 py-12 text-center">
+          <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-500">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          </div>
+          <p class="text-sm font-medium text-slate-900">Couldn't load this team</p>
+          <p class="mt-1 text-sm text-slate-500">${UI.escape(error.message)}</p>
+          <div class="mt-4 flex gap-3">
+            <button onclick="TeamDetailPage.afterRender()" class="btn btn-secondary">Try again</button>
+            <a href="/admin/teams" onclick="navigateToPage(event, '/admin/teams')" class="btn btn-primary">Back to Teams</a>
+          </div>
+        </div>
+      `;
     }
   }
 
-  static renderTeamDetails(team, stage1Panel, stage2Panel, teamId) {
+  static renderTeam(team, panels, stage1Scores, stage2Scores) {
+    const teamId = team._id;
+    const hasTeam = (panel) => (panel.teams || []).some((t) => t && (t._id || t) === teamId);
+    const stage1Panel = panels?.find((p) => Number(p.stage) === 1 && hasTeam(p)) || null;
+    const stage2Panels = panels ? panels.filter((p) => Number(p.stage) === 2 && hasTeam(p)) : [];
+
+    const judgeAward = new Map();
+    for (const panel of panels || []) {
+      if (Number(panel.stage) !== 2) continue;
+      for (const j of panel.judges || []) if (j) judgeAward.set(j._id || j, panel.awardType || 'Unknown Award');
+    }
+
+    const average = (values) => (values.length ? values.reduce((sum, v) => sum + v, 0) / values.length : 0);
+
+    const stage1Score = average((stage1Scores || []).map((s) => s.totalScore || 0));
+
+    const awardGroups = new Map();
+    for (const score of stage2Scores || []) {
+      const award = score.awardType || judgeAward.get(score.judge?._id || score.judge) || 'Unknown Award';
+      if (!awardGroups.has(award)) awardGroups.set(award, []);
+      awardGroups.get(award).push(score);
+    }
+    const awardAverages = [...awardGroups].map(([award, scores]) => ({
+      award,
+      scores,
+      avg: average(scores.map((s) => s.totalScore || 0)),
+    }));
+    const stage2Score = awardAverages.reduce((max, a) => Math.max(max, a.avg), 0);
+
+    const scoresLoaded = stage1Scores && stage2Scores;
+    const totalScore = 0.6 * stage1Score + 0.4 * stage2Score;
+
     document.getElementById('teamContent').innerHTML = `
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Left Column - Team Information -->
-                <div class="lg:col-span-2 space-y-6">
-                    <!-- Basic Info Card -->
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h2 class="text-xl font-bold text-gray-900 mb-4">Team Information</h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="text-sm font-medium text-gray-500">Team Name</label>
-                                <p class="text-gray-900 font-medium">${team.name}</p>
-                            </div>
-                            <div>
-                                <label class="text-sm font-medium text-gray-500">Challenge</label>
-                                <p class="text-gray-900">${team.challenge}</p>
-                            </div>
-                            <div>
-                                <label class="text-sm font-medium text-gray-500">Team Leader</label>
-                                <p class="text-gray-900">${team.leaderName}</p>
-                            </div>
-                            <div>
-                                <label class="text-sm font-medium text-gray-500">Leader Email</label>
-                                <p class="text-gray-900">${team.leaderEmail}</p>
-                            </div>
-                        </div>
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div class="space-y-6 lg:col-span-2">
+          ${TeamDetailPage.infoCard(team)}
+          ${TeamDetailPage.linksCard(team)}
+        </div>
 
-                        ${
-                          team.subjects && team.subjects.length > 0
-                            ? `
-                            <div class="mt-4">
-                                <label class="text-sm font-medium text-gray-500 block mb-2">Subjects</label>
-                                <div class="flex flex-wrap gap-2">
-                                    ${team.subjects
-                                      .map(
-                                        (subject) => `
-                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                                            ${subject}
-                                        </span>
-                                    `,
-                                      )
-                                      .join('')}
-                                </div>
-                            </div>
-                        `
-                            : ''
-                        }
-                    </div>
+        <div class="space-y-6">
+          <div class="rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 p-6 text-white shadow-sm">
+            <p class="text-sm font-medium text-white/80">Total combined score</p>
+            <p class="mt-1 text-4xl font-semibold">${scoresLoaded ? totalScore.toFixed(2) : '—'}</p>
+            <p class="mt-2 text-xs text-white/70">60% Stage 1 + 40% Stage 2</p>
+          </div>
 
-                    <!-- Solution Card -->
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h2 class="text-xl font-bold text-gray-900 mb-4">Solution Description</h2>
-                        <p class="text-gray-700 whitespace-pre-wrap">${team.actualSolution || 'No solution description provided'}</p>
-                    </div>
-
-                    <!-- Links Card -->
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h2 class="text-xl font-bold text-gray-900 mb-4">Project Links</h2>
-                        <div class="space-y-3">
-                            ${
-                              team.demoLink
-                                ? `
-                                <a href="${team.demoLink}" target="_blank" class="flex items-center text-blue-600 hover:text-blue-800">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                                    </svg>
-                                    <span>Demo Video</span>
-                                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                    </svg>
-                                </a>
-                            `
-                                : '<p class="text-gray-500">No demo link provided</p>'
-                            }
-                            
-                            ${
-                              team.proposalLink
-                                ? `
-                                <a href="${team.proposalLink}" target="_blank" class="flex items-center text-blue-600 hover:text-blue-800">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                    </svg>
-                                    <span>Project Proposal</span>
-                                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                    </svg>
-                                </a>
-                            `
-                                : '<p class="text-gray-500">No proposal link provided</p>'
-                            }
-                            
-                            ${
-                              team.projectLink
-                                ? `
-                                <a href="${team.projectLink}" target="_blank" class="flex items-center text-blue-600 hover:text-blue-800">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
-                                    </svg>
-                                    <span>Project Link</span>
-                                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                    </svg>
-                                </a>
-                            `
-                                : '<p class="text-gray-500">No project link provided</p>'
-                            }
-                            
-                            ${
-                              team.nasaSubmitLink
-                                ? `
-                                <a href="${team.nasaSubmitLink}" target="_blank" class="flex items-center text-blue-600 hover:text-blue-800">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
-                                    </svg>
-                                    <span>NASA Submit Link</span>
-                                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                    </svg>
-                                </a>
-                            `
-                                : '<p class="text-gray-500">No NASA submit link provided</p>'
-                            }
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right Column - Panel Assignments & Scores -->
-                <div class="space-y-6">
-                    <!-- Stage 1 Card -->
-                    <div class="bg-white rounded-lg shadow overflow-hidden">
-                        <div class="bg-blue-50 px-6 py-4 border-b border-blue-100">
-                            <h2 class="text-lg font-bold text-blue-900">Stage 1</h2>
-                        </div>
-                        <div class="p-6 space-y-4">
-                            <div>
-                                <label class="text-sm font-medium text-gray-500 block mb-1">Panel Assignment</label>
-                                ${
-                                  stage1Panel
-                                    ? `
-                                    <div class="flex items-center text-blue-600">
-                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        <span class="font-medium">${stage1Panel.name}</span>
-                                    </div>
-                                `
-                                    : `
-                                    <div class="flex items-center text-gray-400">
-                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
-                                        </svg>
-                                        <span>Not assigned</span>
-                                    </div>
-                                `
-                                }
-                            </div>
-
-                            <div>
-                                <label class="text-sm font-medium text-gray-500 block mb-1">Current Score</label>
-                                <div class="text-3xl font-bold text-blue-600" id="stage1Score">
-                                    <div class="inline-block animate-pulse">--</div>
-                                </div>
-                                <p class="text-xs text-gray-500 mt-1">Average from all judges</p>
-                            </div>
-
-                            <div id="stage1Judges" class="border-t pt-4">
-                                <label class="text-sm font-medium text-gray-500 block mb-2">Individual Judge Scores</label>
-                                <div class="space-y-2" id="stage1JudgesList">
-                                    <p class="text-sm text-gray-400">Loading...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Stage 2 Card -->
-                    <div class="bg-white rounded-lg shadow overflow-hidden">
-                        <div class="bg-purple-50 px-6 py-4 border-b border-purple-100">
-                            <h2 class="text-lg font-bold text-purple-900">Stage 2</h2>
-                        </div>
-                        <div class="p-6 space-y-4">
-                            <div>
-                                <label class="text-sm font-medium text-gray-500 block mb-1">Panel Assignment</label>
-                                ${
-                                  stage2Panel
-                                    ? `
-                                    <div class="flex items-center text-purple-600">
-                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        <span class="font-medium">${stage2Panel.name}</span>
-                                    </div>
-                                `
-                                    : `
-                                    <div class="flex items-center text-gray-400">
-                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
-                                        </svg>
-                                        <span>Not assigned</span>
-                                    </div>
-                                `
-                                }
-                            </div>
-
-                            <div>
-                                <label class="text-sm font-medium text-gray-500 block mb-1">Current Score</label>
-                                <div class="text-3xl font-bold text-purple-600" id="stage2Score">
-                                    <div class="inline-block animate-pulse">--</div>
-                                </div>
-                                <p class="text-xs text-gray-500 mt-1">Best panel average (MAX)</p>
-                            </div>
-
-                            <div id="stage2Judges" class="border-t pt-4">
-                                <label class="text-sm font-medium text-gray-500 block mb-2">Individual Judge Scores</label>
-                                <div class="space-y-2" id="stage2JudgesList">
-                                    <p class="text-sm text-gray-400">Loading...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Total Score Card -->
-                    <div class="bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow p-6 text-white">
-                        <label class="text-sm font-medium opacity-90 block mb-1">Total Combined Score</label>
-                        <div class="text-4xl font-bold" id="totalScore">
-                            <div class="inline-block animate-pulse">--</div>
-                        </div>
-                        <p class="text-xs opacity-75 mt-2">Stage 1 + Stage 2</p>
-                    </div>
-                </div>
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Stage 1</h2>
+              ${stage1Panel
+                ? `<span class="badge badge-blue">${UI.escape(stage1Panel.name)}</span>`
+                : `<span class="badge badge-gray">${panels ? 'Not assigned' : 'Unknown'}</span>`}
             </div>
-        `;
+            <div class="card-body space-y-4">
+              <div>
+                <p class="text-sm text-slate-500">Average score</p>
+                <p class="text-3xl font-semibold text-blue-600">${stage1Scores ? stage1Score.toFixed(2) : '—'}</p>
+                ${stage1Scores
+                  ? `<p class="mt-1 text-xs text-slate-500">${stage1Scores.length}${stage1Panel ? ` of ${(stage1Panel.judges || []).length}` : ''} judges scored</p>`
+                  : ''}
+              </div>
+              <div class="border-t border-slate-100 pt-4">
+                <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Judge scores</p>
+                ${!stage1Scores
+                  ? '<p class="text-sm text-red-600">Couldn\'t load Stage 1 scores.</p>'
+                  : stage1Scores.length
+                    ? `<div class="space-y-1.5">${stage1Scores.map((s) => TeamDetailPage.judgeScoreRow(s, 'text-blue-600')).join('')}</div>`
+                    : '<p class="text-sm text-slate-400">No scores yet</p>'}
+              </div>
+            </div>
+          </div>
 
-    // Load scores after rendering
-    TeamDetailPage.loadScores(teamId);
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Stage 2</h2>
+              ${stage2Panels.length
+                ? `<span class="badge badge-purple">${stage2Panels.length} award panel${stage2Panels.length === 1 ? '' : 's'}</span>`
+                : `<span class="badge badge-gray">${panels ? 'Not assigned' : 'Unknown'}</span>`}
+            </div>
+            <div class="card-body space-y-4">
+              ${stage2Panels.length
+                ? `<div class="flex flex-wrap gap-1">${stage2Panels
+                    .map((p) => `<span class="badge badge-gray">${UI.escape(p.awardType || p.name)}</span>`)
+                    .join('')}</div>`
+                : ''}
+              <div>
+                <p class="text-sm text-slate-500">Best award average</p>
+                <p class="text-3xl font-semibold text-purple-600">${stage2Scores ? stage2Score.toFixed(2) : '—'}</p>
+                <p class="mt-1 text-xs text-slate-500">Highest average across award panels</p>
+              </div>
+              <div class="border-t border-slate-100 pt-4">
+                <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Judge scores by award</p>
+                ${!stage2Scores
+                  ? '<p class="text-sm text-red-600">Couldn\'t load Stage 2 scores.</p>'
+                  : awardAverages.length
+                    ? `<div class="space-y-4">${awardAverages
+                        .map(
+                          ({ award, scores, avg }) => `
+                          <div>
+                            <div class="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                              <span class="font-semibold text-slate-700">${UI.escape(award)}</span>
+                              <span class="text-slate-500">Avg ${avg.toFixed(2)}</span>
+                            </div>
+                            <div class="space-y-1.5 border-l-2 border-purple-100 pl-3">
+                              ${scores.map((s) => TeamDetailPage.judgeScoreRow(s, 'text-purple-600')).join('')}
+                            </div>
+                          </div>`,
+                        )
+                        .join('')}</div>`
+                    : '<p class="text-sm text-slate-400">No scores yet</p>'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
-  static async loadScores(teamId) {
-    try {
-      let stage1Score = 0;
-      let stage2Score = 0;
+  static judgeScoreRow(score, scoreClass) {
+    const judge = score.judge;
+    const name = UI.escape(judge?.name || 'Unknown judge');
+    const href = judge?._id ? `/admin/judges/${judge._id}` : '';
+    return `
+      <div class="flex items-center justify-between gap-3 text-sm">
+        ${href
+          ? `<a href="${href}" onclick="navigateToPage(event, '${href}')" class="truncate text-slate-600 hover:text-blue-600">${name}</a>`
+          : `<span class="truncate text-slate-600">${name}</span>`}
+        <span class="font-semibold ${scoreClass}">${Number(score.totalScore || 0).toFixed(2)}</span>
+      </div>
+    `;
+  }
 
-      // Load Stage 1 scores
-      const stage1Response = await fetch(`/api/scores/team/${teamId}/stage/1`, {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
+  static infoCard(team) {
+    const solution = team.actualSolution || '';
+    const solutionBadge = { web: 'badge-blue', mobile: 'badge-green', ai: 'badge-purple' }[solution.toLowerCase()] || 'badge-gray';
+    const field = (label, value) => `
+      <div>
+        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">${label}</dt>
+        <dd class="mt-1 break-words text-sm text-slate-900">${value}</dd>
+      </div>`;
 
-      if (stage1Response.ok) {
-        const stage1Scores = await stage1Response.json();
+    return `
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Team information</h2>
+          ${team.qualifiedForStage2
+            ? '<span class="badge badge-green">Qualified for Stage 2</span>'
+            : '<span class="badge badge-gray">Not qualified for Stage 2</span>'}
+        </div>
+        <div class="card-body">
+          <dl class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            ${field('Team name', `<span class="font-medium">${UI.escape(team.name)}</span>`)}
+            ${field('Challenge', UI.escape(team.challenge || '—'))}
+            ${field('Team leader', UI.escape(team.leaderName || '—'))}
+            ${field(
+              'Leader email',
+              team.leaderEmail
+                ? `<a href="mailto:${UI.escape(team.leaderEmail)}" class="text-blue-600 hover:underline">${UI.escape(team.leaderEmail)}</a>`
+                : '—',
+            )}
+            ${field(
+              'Solution',
+              solution ? `<span class="badge ${solutionBadge}">${UI.escape(solution)}</span>` : '<span class="text-slate-400">Not provided</span>',
+            )}
+            ${team.panelNumber ? field('Panel number', UI.escape(team.panelNumber)) : ''}
+          </dl>
+          ${team.subjects?.length
+            ? `<div class="mt-5 border-t border-slate-100 pt-5">
+                <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Subjects</p>
+                <div class="flex flex-wrap gap-2">${team.subjects
+                  .map((s) => `<span class="badge badge-blue">${UI.escape(s)}</span>`)
+                  .join('')}</div>
+              </div>`
+            : ''}
+        </div>
+      </div>
+    `;
+  }
 
-        if (stage1Scores.length > 0) {
-          const total = stage1Scores.reduce(
-            (sum, score) => sum + score.totalScore,
-            0,
-          );
-          stage1Score = total / stage1Scores.length;
+  static linksCard(team) {
+    const links = [
+      ['Demo video', team.demoLink, 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z'],
+      ['Project proposal', team.proposalLink, 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'],
+      ['Project link', team.projectLink, 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4'],
+      ['NASA submission', team.nasaSubmitLink, 'M13 10V3L4 14h7v7l9-11h-7z'],
+    ];
 
-          document.getElementById('stage1Score').innerHTML =
-            stage1Score.toFixed(2);
-
-          // Display individual judge scores
-          document.getElementById('stage1JudgesList').innerHTML = stage1Scores
-            .map(
-              (score) => `
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="text-gray-600">${score.judge?.name || 'Unknown Judge'}</span>
-                            <span class="font-medium text-blue-600">${score.totalScore.toFixed(2)}</span>
-                        </div>
-                    `,
-            )
-            .join('');
-        } else {
-          document.getElementById('stage1Score').innerHTML = '0.00';
-          document.getElementById('stage1JudgesList').innerHTML =
-            '<p class="text-sm text-gray-400">No scores yet</p>';
-        }
-      } else {
-        document.getElementById('stage1Score').innerHTML = '0.00';
-        document.getElementById('stage1JudgesList').innerHTML =
-          '<p class="text-sm text-red-400">Error loading</p>';
-      }
-
-      // Load Stage 2 scores
-      const stage2Response = await fetch(`/api/scores/team/${teamId}/stage/2`, {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
-
-      if (stage2Response.ok) {
-        const stage2Scores = await stage2Response.json();
-
-        if (stage2Scores.length > 0) {
-          // Build judge -> awardType map from Stage 2 panels, used if awardType missing on score
-          let judgeAwardMap = {};
-          try {
-            const panelsRes = await fetch('/api/panels', {
-              headers: { Authorization: `Bearer ${authService.token}` },
-            });
-            if (panelsRes.ok) {
-              const panels = await panelsRes.json();
-              panels
-                .filter((p) => p.stage === 2)
-                .forEach((p) => {
-                  const award = p.awardType || 'Unknown Award';
-                  (p.judges || []).forEach((j) => {
-                    const id =
-                      typeof j === 'string' ? j : j?._id || j?.toString();
-                    if (id) judgeAwardMap[id] = award;
-                  });
-                });
-            }
-          } catch (e) {}
-
-          // Group scores by award type (Stage 2 awards)
-          const awardScores = {};
-          for (const score of stage2Scores) {
-            const judgeId = score.judge?._id || score.judge;
-            const award =
-              score.awardType || judgeAwardMap[judgeId] || 'Unknown Award';
-            if (!awardScores[award]) awardScores[award] = [];
-            awardScores[award].push(score.totalScore);
-          }
-
-          // Calculate average per award and take MAX
-          let maxAwardAverage = 0;
-          for (const award in awardScores) {
-            const scores = awardScores[award];
-            const avgScore =
-              scores.reduce((sum, s) => sum + s, 0) / scores.length;
-            if (avgScore > maxAwardAverage) maxAwardAverage = avgScore;
-          }
-
-          stage2Score = maxAwardAverage;
-          document.getElementById('stage2Score').innerHTML =
-            stage2Score.toFixed(2);
-
-          // Display individual judge scores grouped by award type
-          let judgeScoresHtml = '';
-          for (const award in awardScores) {
-            const awardAvg =
-              awardScores[award].reduce((sum, s) => sum + s, 0) /
-              awardScores[award].length;
-            judgeScoresHtml += `<div class="mb-3"><div class="text-xs font-semibold text-gray-500 mb-1">${award} (Avg: ${awardAvg.toFixed(2)})</div>`;
-            const awardJudges = stage2Scores.filter(
-              (s) =>
-                (s.awardType ||
-                  judgeAwardMap[s.judge?._id || s.judge] ||
-                  'Unknown Award') === award,
-            );
-            judgeScoresHtml += awardJudges
-              .map(
-                (score) => `
-                            <div class="flex justify-between items-center text-sm pl-2">
-                                <span class="text-gray-600">${score.judge?.name || 'Unknown Judge'}</span>
-                                <span class="font-medium text-purple-600">${score.totalScore.toFixed(2)}</span>
-                            </div>
-                        `,
-              )
-              .join('');
-            judgeScoresHtml += '</div>';
-          }
-
-          document.getElementById('stage2JudgesList').innerHTML =
-            judgeScoresHtml;
-        } else {
-          document.getElementById('stage2Score').innerHTML = '0.00';
-          document.getElementById('stage2JudgesList').innerHTML =
-            '<p class="text-sm text-gray-400">No scores yet</p>';
-        }
-      } else {
-        document.getElementById('stage2Score').innerHTML = '0.00';
-        document.getElementById('stage2JudgesList').innerHTML =
-          '<p class="text-sm text-red-400">Error loading</p>';
-      }
-
-      // Calculate and display total (60% Stage 1 + 40% Stage 2)
-      const totalScore = 0.6 * stage1Score + 0.4 * stage2Score;
-      document.getElementById('totalScore').innerHTML = totalScore.toFixed(2);
-    } catch (error) {
-      console.error('Failed to load scores:', error);
-      document.getElementById('stage1Score').innerHTML = 'Error';
-      document.getElementById('stage2Score').innerHTML = 'Error';
-      document.getElementById('totalScore').innerHTML = 'Error';
-    }
+    return `
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Project links</h2></div>
+        <div class="card-body grid grid-cols-1 gap-3 sm:grid-cols-2">
+          ${links
+            .map(([label, url, icon]) => {
+              const iconHtml = `<svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${icon}"></path></svg>`;
+              if (!url) {
+                return `
+                  <div class="flex items-center gap-3 rounded-lg border border-dashed border-slate-200 p-3 text-slate-400">
+                    ${iconHtml}
+                    <div class="min-w-0"><p class="text-sm font-medium">${label}</p><p class="text-xs">Not provided</p></div>
+                  </div>`;
+              }
+              const isWebLink = /^https?:\/\//i.test(url);
+              const inner = `
+                ${iconHtml}
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium text-slate-900">${label}</p>
+                  <p class="truncate text-xs text-slate-500">${UI.escape(url)}</p>
+                </div>`;
+              return isWebLink
+                ? `<a href="${UI.escape(url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-blue-600 transition-colors hover:border-blue-300 hover:bg-blue-50">
+                    ${inner}
+                    <svg class="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                  </a>`
+                : `<div class="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-slate-500">${inner}</div>`;
+            })
+            .join('')}
+        </div>
+      </div>
+    `;
   }
 }

@@ -9,7 +9,6 @@ class App {
     router.addRoute('/login', LoginPage);
     router.addRoute('/', LoginPage);
     router.addRoute('/admin', AdminPage);
-    router.addRoute('/admin/upload-data', UploadDataPage);
     router.addRoute('/admin/upload-data-stream', UploadDataStreamPage);
     router.addRoute('/admin/judges', JudgesManagementPage);
     router.addRoute('/admin/judges/:id', JudgeDetailPage);
@@ -47,8 +46,6 @@ class App {
         } else {
           router.navigate('/dashboard', false);
         }
-      } else {
-        router.render();
       }
     }
   }

@@ -88,7 +88,10 @@ export class ScoresController {
   @Get('top')
   async getTopTeams(@Req() request: any) {
     try {
-      const stage = parseInt(request.query.stage) || 1;
+      const stage =
+        request.query.stage === 'final'
+          ? 'final'
+          : parseInt(request.query.stage) || 1;
       const limit = parseInt(request.query.limit) || 10;
       return await this.scoresService.getTopTeams(stage, limit);
     } catch (error) {

@@ -1,625 +1,526 @@
 // Stage 1 Team Detail Page (for Judges)
 class Stage1TeamDetailPage {
+  static state = null;
+  static loadSeq = 0;
+  static highlight = ['ring-2', 'ring-amber-400', 'bg-amber-50'];
+  static timerBase = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-xs font-semibold tabular-nums';
+  static icons = {
+    back: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>',
+    arrow: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>',
+    external: '<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>',
+    clock: '<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+    yes: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>',
+    no: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>',
+    spinner: '<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>',
+  };
+
   static render() {
     return `
-            <div class="min-h-screen bg-gray-50">
-                ${Navbar.render('Stage 1 Evaluation')}
-                
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                    <!-- Header with Navigation -->
-                    <div class="bg-white rounded-lg shadow mb-6">
-                        <div class="px-6 py-4 border-b border-gray-200">
-                            <div class="flex justify-between items-center">
-                                <div class="flex items-center space-x-4">
-                                    <button 
-                                        onclick="router.navigate('/dashboard')"
-                                        class="text-gray-600 hover:text-gray-900 transition-colors duration-200"
-                                    >
-                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                                        </svg>
-                                    </button>
-                                    <h1 class="text-2xl font-bold text-gray-900" id="teamName">Loading...</h1>
-                                </div>
-                                <div class="flex items-center space-x-4">
-                                    <!-- Timer -->
-                                    <div class="flex items-center space-x-3 bg-blue-50 px-4 py-2 rounded-lg border-2 border-blue-200">
-                                        <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        <span id="timer" class="text-3xl font-mono font-bold text-blue-700">05:00</span>
-                                    </div>
-                                    <!-- Next Team Button -->
-                                    <button 
-                                        id="nextTeamBtn"
-                                        onclick="Stage1TeamDetailPage.goToNextTeam()"
-                                        class="bg-gray-400 text-white px-4 py-2 rounded-lg cursor-not-allowed transition-colors duration-200"
-                                        disabled
-                                        title="Please submit your score first"
-                                    >
-                                        Next Team
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <!-- Team Information -->
-                        <div class="lg:col-span-1">
-                            <div class="bg-white rounded-lg shadow">
-                                <div class="px-6 py-4 border-b border-gray-200">
-                                    <h2 class="text-lg font-medium text-gray-900">Team Information</h2>
-                                </div>
-                                <div class="p-6">
-                                    <div id="teamInfo" class="space-y-4">
-                                        <!-- Team info will be loaded here -->
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Scoring Form -->
-                        <div class="lg:col-span-2">
-                            <div class="bg-white rounded-lg shadow">
-                                <div class="px-6 py-4 border-b border-gray-200">
-                                    <div class="flex justify-between items-center">
-                                        <h2 class="text-lg font-medium text-gray-900">Stage 1 Evaluation</h2>
-                                        <button 
-                                            id="submitScoreBtn"
-                                            onclick="Stage1TeamDetailPage.submitScore(event)"
-                                            class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200"
-                                        >
-                                            Submit Score
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="p-6">
-                                    <div id="scoringForm" class="space-y-8">
-                                        <!-- Scoring form will be loaded here -->
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+      ${Navbar.render('Stage 1 Evaluation')}
+      <main id="stage1Root" class="mx-auto max-w-6xl px-4 pb-40 sm:px-6 lg:px-8 lg:pb-12">
+        ${Stage1TeamDetailPage.renderSkeleton()}
+      </main>
+    `;
   }
 
   static afterRender() {
+    window.scrollTo(0, 0);
     const teamId = Stage1TeamDetailPage.getTeamIdFromUrl();
-    if (teamId) {
-      Stage1TeamDetailPage.loadTeamData(teamId);
-      Stage1TeamDetailPage.loadStageCriteria(teamId);
-      Stage1TeamDetailPage.loadTimerSetting();
-    }
-  }
-
-  static async loadTimerSetting() {
-    try {
-      const response = await fetch('/api/stages/Stage%201', {
-        headers: { Authorization: `Bearer ${authService.token}` },
-      });
-
-      if (response.ok) {
-        const stage = await response.json();
-        const timerMinutes = stage.timerMinutes || 30;
-        Stage1TeamDetailPage.startTimer(timerMinutes);
-      } else {
-        Stage1TeamDetailPage.startTimer(30);
-      }
-    } catch (error) {
-      console.error('Failed to load timer setting:', error);
-      Stage1TeamDetailPage.startTimer(30);
-    }
+    if (teamId) Stage1TeamDetailPage.load(teamId);
   }
 
   static getTeamIdFromUrl() {
-    const path = window.location.pathname;
-    const match = path.match(/\/stage1\/(.+)/);
+    const match = window.location.pathname.match(/\/stage1\/(.+)/);
     return match ? match[1] : null;
   }
 
-  static async loadTeamData(teamId) {
+  static async load(teamId) {
+    const seq = ++this.loadSeq;
+    const root = () => (seq === this.loadSeq ? document.getElementById('stage1Root') : null);
+    this.state = null;
+    root().innerHTML = this.renderSkeleton();
+
+    const judgeId = authService.getUserId();
+    let scoreError = null;
+    let results;
     try {
-      const response = await fetch(`/api/teams/${teamId}`, {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
-
-      if (response.ok) {
-        const team = await response.json();
-        Stage1TeamDetailPage.displayTeamInfo(team);
-        window.currentTeam = team;
-      } else {
-        console.error('Failed to load team data');
-      }
+      results = await Promise.all([
+        UI.api('/api/stages/Stage%201'),
+        UI.api(`/api/teams/${teamId}`),
+        UI.api('/api/judges/assigned-teams').catch(() => null),
+        UI.api(`/api/scores/judge/${judgeId}/team/${teamId}/stage/1`).catch((error) => {
+          scoreError = error;
+          return null;
+        }),
+      ]);
     } catch (error) {
-      console.error('Error loading team data:', error);
-    }
-  }
-
-  static displayTeamInfo(team) {
-    document.getElementById('teamName').textContent = team.name;
-
-    const teamInfoContainer = document.getElementById('teamInfo');
-    teamInfoContainer.innerHTML = `
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Team Name</label>
-                <p class="mt-1 text-sm text-gray-900">${team.name}</p>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Challenge</label>
-                <p class="mt-1 text-sm text-gray-900">${team.challenge}</p>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Solution Type</label>
-                <p class="mt-1 text-sm text-gray-900">${team.actualSolution || '-'}</p>
-            </div>
-            <div class="space-y-2">
-                <label class="block text-sm font-medium text-gray-700">Links</label>
-                ${team.demoLink ? `<a href="${team.demoLink}" target="_blank" class="block text-blue-600 hover:text-blue-900 text-sm">📺 Demo Link</a>` : '<p class="text-sm text-gray-400">No demo link</p>'}
-                ${team.proposalLink ? `<a href="${team.proposalLink}" target="_blank" class="block text-blue-600 hover:text-blue-900 text-sm">📄 Proposal Link</a>` : '<p class="text-sm text-gray-400">No proposal link</p>'}
-                ${team.projectLink ? `<a href="${team.projectLink}" target="_blank" class="block text-blue-600 hover:text-blue-900 text-sm">🚀 Project Link</a>` : '<p class="text-sm text-gray-400">No project link</p>'}
-                ${team.nasaSubmitLink ? `<a href="${team.nasaSubmitLink}" target="_blank" class="block text-blue-600 hover:text-blue-900 text-sm">🌌 NASA Submit Link</a>` : '<p class="text-sm text-gray-400">No NASA submit link</p>'}
-            </div>
-        `;
-  }
-
-  static async loadStageCriteria(teamId) {
-    try {
-      const response = await fetch('/api/stages/Stage%201', {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
-
-      if (response.ok) {
-        const stage = await response.json();
-        window.stageCriteria = stage.criteria;
-        Stage1TeamDetailPage.renderScoringForm(stage.criteria || []);
-
-        setTimeout(async () => {
-          await Stage1TeamDetailPage.loadPreviousScore(teamId);
-        }, 100);
-      } else {
-        console.error('Failed to load stage criteria');
-      }
-    } catch (error) {
-      console.error('Error loading stage criteria:', error);
-    }
-  }
-
-  static async loadPreviousScore(teamId) {
-    try {
-      const judgeId = authService.getUserId();
-      console.log(
-        'Loading previous score for judge:',
-        judgeId,
-        'team:',
-        teamId,
-      );
-
-      const response = await fetch(
-        `/api/scores/judge/${judgeId}/team/${teamId}/stage/1`,
-        {
-          headers: {
-            Authorization: `Bearer ${authService.token}`,
-          },
-        },
-      );
-
-      console.log('Response status:', response.status, 'ok:', response.ok);
-
-      if (response.ok && response.status !== 204) {
-        try {
-          const score = await response.json();
-          console.log('Previous score loaded:', score);
-
-          if (score && score.scores) {
-            window.stageCriteria.forEach((criterion, criterionIndex) => {
-              const savedScores = score.scores[criterion.name];
-              console.log(`Restoring ${criterion.name}:`, savedScores);
-
-              if (savedScores && Array.isArray(savedScores)) {
-                savedScores.forEach((value, questionIndex) => {
-                  const checkboxId = `criterion_${criterionIndex}_question_${questionIndex}`;
-                  const checkbox = document.getElementById(checkboxId);
-                  console.log(
-                    `Checkbox ${checkboxId}:`,
-                    checkbox ? 'found' : 'NOT FOUND',
-                    'value:',
-                    value,
-                  );
-
-                  if (checkbox) {
-                    checkbox.checked = value === 1;
-                  }
-                });
-              }
-            });
-            Stage1TeamDetailPage.updateScore();
-            // Enable Next Team button if score already exists
-            Stage1TeamDetailPage.enableNextTeamButton();
-            console.log('Score display updated');
-          }
-        } catch (jsonError) {
-          console.log('JSON parse error:', jsonError);
-        }
-      } else {
-        console.log('No previous score found (response not ok)');
-      }
-    } catch (error) {
-      console.log('No previous score found or error loading:', error);
-    }
-  }
-
-  static renderScoringForm(criteria) {
-    const formContainer = document.getElementById('scoringForm');
-
-    if (criteria.length === 0) {
-      formContainer.innerHTML = `
-                <div class="text-center py-8 text-gray-500">
-                    <p class="text-sm font-medium text-gray-900">No criteria configured</p>
-                    <p class="text-sm text-gray-500">Please contact the administrator</p>
-                </div>
-            `;
+      if (root()) root().innerHTML = this.renderError(error.message);
       return;
     }
+    if (!root()) return;
 
-    formContainer.innerHTML =
-      criteria
-        .map(
-          (criterion, criterionIndex) => `
-            <div class="border border-gray-200 rounded-lg overflow-hidden">
-                <div 
-                    class="bg-gray-50 px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors duration-200"
-                    onclick="Stage1TeamDetailPage.toggleCriterion(${criterionIndex})"
-                >
-                    <div class="flex justify-between items-center">
-                        <div class="flex-1">
-                            <div class="flex items-center space-x-3">
-                                <svg 
-                                    id="arrow_${criterionIndex}" 
-                                    class="w-5 h-5 text-gray-500 transform transition-transform duration-200"
-                                    fill="none" 
-                                    stroke="currentColor" 
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                                </svg>
-                                <h3 class="text-lg font-medium text-gray-900">${criterion.name}</h3>
-                            </div>
-                            <p class="text-sm text-gray-500 ml-8 mt-1">${Array.isArray(criterion.questions) ? criterion.questions.length : criterion.questions} question(s)</p>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-sm text-gray-600">
-                                <span class="font-medium">Score:</span> 
-                                <span id="criterionScore_${criterionIndex}">0</span> / ${Array.isArray(criterion.questions) ? criterion.questions.length : criterion.questions}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div id="criterion_content_${criterionIndex}" class="hidden">
-                    <div class="px-6 py-4 space-y-4 bg-white">
-                        ${(Array.isArray(criterion.questions)
-                          ? criterion.questions
-                          : Array.from(
-                              { length: criterion.questions },
-                              (_, i) => `Question ${i + 1}`,
-                            )
-                        )
-                          .map(
-                            (question, questionIndex) => `
-                            <div class="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors duration-150">
-                                <input 
-                                    type="checkbox" 
-                                    id="criterion_${criterionIndex}_question_${questionIndex}"
-                                    name="criterion_${criterionIndex}_question_${questionIndex}" 
-                                    value="1"
-                                    class="mt-1 h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                    onchange="Stage1TeamDetailPage.updateScore()"
-                                >
-                                <label for="criterion_${criterionIndex}_question_${questionIndex}" class="flex-1 text-sm text-gray-700 cursor-pointer">
-                                    ${question}
-                                </label>
-                            </div>
-                        `,
-                          )
-                          .join('')}
-                    </div>
-                </div>
-            </div>
-        `,
-        )
-        .join('') +
-      `
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-lg font-medium text-blue-900">Total Score</h3>
-                    <div class="text-2xl font-bold text-blue-900">
-                        <span id="totalScore">0.00</span> / <span id="maxScore">0.00</span>
-                    </div>
-                </div>
-                <p class="text-sm text-blue-700 mt-2">
-                    Final weighted score based on all criteria
-                </p>
-            </div>
-        `;
+    const [stage, team, assigned, score] = results;
+    const saved = score && score.scores ? score.scores : null;
+    const criteria = (stage.criteria || []).map((c) => ({
+      name: c.name,
+      weight: c.weight,
+      questions: Array.isArray(c.questions)
+        ? c.questions
+        : Array.from({ length: c.questions || 0 }, (_, i) => `Question ${i + 1}`),
+    }));
+    const scoredIds = new Set(assigned?.stage1ScoredTeamIds || []);
+    if (saved) scoredIds.add(team._id);
 
-    // Initialize the score display immediately after rendering
-    Stage1TeamDetailPage.updateScore();
-  }
-
-  static toggleCriterion(index) {
-    const content = document.getElementById(`criterion_content_${index}`);
-    const arrow = document.getElementById(`arrow_${index}`);
-
-    if (content && arrow) {
-      if (content.classList.contains('hidden')) {
-        content.classList.remove('hidden');
-        arrow.classList.add('rotate-90');
-      } else {
-        content.classList.add('hidden');
-        arrow.classList.remove('rotate-90');
-      }
-    }
-  }
-
-  static updateScore() {
-    if (!window.stageCriteria) return;
-
-    let totalScore = 0;
-    let maxPossibleScore = 0;
-    const numCriteria = window.stageCriteria.length;
-
-    window.stageCriteria.forEach((criterion, criterionIndex) => {
-      let criterionScore = 0;
-      const questionCount = Array.isArray(criterion.questions)
-        ? criterion.questions.length
-        : criterion.questions;
-
-      for (
-        let questionIndex = 0;
-        questionIndex < questionCount;
-        questionIndex++
-      ) {
-        const checkboxId = `criterion_${criterionIndex}_question_${questionIndex}`;
-        const checkbox = document.getElementById(checkboxId);
-        if (checkbox && checkbox.checked) {
-          criterionScore += 1;
-        }
-      }
-
-      const weightedScore = criterionScore * criterion.weight;
-      const maxWeightedScore = questionCount * criterion.weight;
-
-      totalScore += weightedScore;
-      maxPossibleScore += maxWeightedScore;
-
-      // Update criterion score display
-      const criterionScoreElement = document.getElementById(
-        `criterionScore_${criterionIndex}`,
-      );
-      if (criterionScoreElement) {
-        criterionScoreElement.textContent = criterionScore;
-      }
-    });
-
-    // Normalize to 5-point scale
-    const normalizedScore = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 5 : 0;
-    const maxNormalizedScore = 5.0;
-
-    const totalScoreElement = document.getElementById('totalScore');
-    const maxScoreElement = document.getElementById('maxScore');
-
-    if (totalScoreElement) {
-      totalScoreElement.textContent = normalizedScore.toFixed(2);
-    }
-    if (maxScoreElement) {
-      maxScoreElement.textContent = maxNormalizedScore.toFixed(1);
-    }
-  }
-
-  static startTimer(minutes = 30) {
-    let timeLeft = minutes * 60;
-    const timerElement = document.getElementById('timer');
-    const timerContainer = timerElement.parentElement;
-
-    const updateTimer = () => {
-      const minutes = Math.floor(timeLeft / 60);
-      const seconds = timeLeft % 60;
-      const display = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-
-      timerElement.textContent = display;
-
-      if (timeLeft <= 60) {
-        timerElement.classList.remove('text-blue-700');
-        timerElement.classList.add('text-red-600');
-        timerContainer.classList.remove('bg-blue-50', 'border-blue-200');
-        timerContainer.classList.add('bg-red-50', 'border-red-300');
-        const svg = timerContainer.querySelector('svg');
-        if (svg) {
-          svg.classList.remove('text-blue-600');
-          svg.classList.add('text-red-600');
-        }
-      }
-
-      if (timeLeft > 0) {
-        timeLeft--;
-        setTimeout(updateTimer, 1000);
-      }
+    this.state = {
+      team,
+      criteria,
+      scoredIds,
+      teams: assigned?.stage1Teams || [],
+      answers: criteria.map((c) =>
+        c.questions.map((_, qi) => {
+          const value = saved?.[c.name]?.[qi];
+          return value === 1 || value === 0 ? value : null;
+        }),
+      ),
+      dirty: false,
+      saving: false,
     };
 
-    updateTimer();
+    root().innerHTML = this.renderPage();
+    document.getElementById('scoringForm').addEventListener('change', (e) => this.onAnswer(e));
+    this.refresh();
+    this.startTimer(stage.timerMinutes || 30);
+    if (scoreError) UI.toast(`Couldn't load your saved score: ${scoreError.message}`, 'warning');
   }
 
-  static async submitScore(event) {
-    if (!window.currentTeam || !window.stageCriteria) {
-      alert('Missing team or criteria data');
+  static renderSkeleton() {
+    const block = `
+      <div class="card card-body space-y-3">
+        <div class="skeleton h-5 w-1/3"></div>
+        <div class="skeleton h-12 w-full"></div>
+        <div class="skeleton h-12 w-full"></div>
+      </div>`;
+    return `
+      <div class="mb-4 h-8"></div>
+      <div class="card card-body space-y-3" aria-busy="true">
+        <div class="skeleton h-4 w-24"></div>
+        <div class="skeleton h-8 w-2/3"></div>
+        <div class="skeleton h-4 w-1/2"></div>
+        <span class="sr-only">Loading team…</span>
+      </div>
+      <div class="mt-6 grid gap-6 lg:grid-cols-3">
+        <div class="space-y-4 lg:col-span-2">${block}${block}</div>
+        <div class="card card-body hidden h-72 lg:block"><div class="skeleton h-full w-full"></div></div>
+      </div>
+    `;
+  }
+
+  static renderError(message) {
+    return `
+      <div class="card mx-auto mt-6 max-w-lg">
+        ${UI.emptyState("Couldn't load this team", message)}
+        <div class="flex justify-center gap-3 px-6 pb-8">
+          <button onclick="router.navigate('/dashboard')" class="btn btn-secondary">Back to dashboard</button>
+          <button onclick="Stage1TeamDetailPage.afterRender()" class="btn btn-primary">Retry</button>
+        </div>
+      </div>
+    `;
+  }
+
+  static renderPage() {
+    const { team, criteria } = this.state;
+    const maxWeighted = criteria.reduce((sum, c) => sum + c.questions.length * c.weight, 0);
+    return `
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <button onclick="Stage1TeamDetailPage.goToDashboard()" class="btn btn-ghost btn-sm -ml-3">${this.icons.back} Dashboard</button>
+        <p id="s1Position" class="text-sm text-slate-500"></p>
+      </div>
+
+      ${this.renderTeamHeader(team)}
+
+      <div class="mt-6 grid gap-6 lg:grid-cols-3">
+        <div id="scoringForm" class="space-y-4 lg:col-span-2">
+          ${criteria.length
+            ? criteria.map((c, ci) => this.renderCriterion(c, ci, maxWeighted)).join('')
+            : `<div class="card">${UI.emptyState('No criteria configured', 'Please contact the administrator.')}</div>`}
+        </div>
+        ${this.renderSummary()}
+      </div>
+
+      ${this.renderActionBar()}
+    `;
+  }
+
+  static renderTeamHeader(team) {
+    const links = [
+      ['demoLink', 'Demo'],
+      ['proposalLink', 'Proposal'],
+      ['projectLink', 'Project'],
+      ['nasaSubmitLink', 'NASA page'],
+    ];
+    return `
+      <section class="card overflow-hidden">
+        <div class="h-1 bg-blue-600"></div>
+        <div class="card-body">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="badge badge-blue">Stage 1</span>
+            <span id="s1Status" class="badge badge-gray">Not scored yet</span>
+          </div>
+          <h2 class="mt-2 break-words text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">${UI.escape(team.name)}</h2>
+          <dl class="mt-3 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-slate-400">Challenge</dt>
+              <dd class="mt-0.5 text-slate-800">${UI.escape(team.challenge || '—')}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-slate-400">Solution type</dt>
+              <dd class="mt-0.5">${team.actualSolution ? `<span class="badge badge-gray uppercase">${UI.escape(team.actualSolution)}</span>` : '<span class="text-slate-800">—</span>'}</dd>
+            </div>
+          </dl>
+          <div class="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            ${links
+              .map(([key, label]) =>
+                team[key]
+                  ? `<a href="${UI.escape(this.safeUrl(team[key]))}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">${label} ${this.icons.external}</a>`
+                  : `<span class="inline-flex items-center justify-center rounded-lg border border-dashed border-slate-200 px-4 py-2 text-sm text-slate-400">No ${label.toLowerCase()}</span>`,
+              )
+              .join('')}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  static safeUrl(url) {
+    const value = String(url).trim();
+    return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  }
+
+  static renderCriterion(criterion, ci, maxWeighted) {
+    const count = criterion.questions.length;
+    const share = maxWeighted > 0 ? Math.round(((count * criterion.weight) / maxWeighted) * 100) : 0;
+    return `
+      <section class="card">
+        <div class="card-header">
+          <div class="min-w-0">
+            <h3 class="card-title">${UI.escape(criterion.name)}</h3>
+            <p class="mt-0.5 text-xs text-slate-500">${count} question${count === 1 ? '' : 's'} · ${share}% of score</p>
+          </div>
+          <span id="s1c_${ci}" class="badge badge-gray"></span>
+        </div>
+        <div class="space-y-2 p-3 sm:p-4">
+          ${criterion.questions.map((question, qi) => this.renderQuestion(question, ci, qi)).join('')}
+        </div>
+      </section>
+    `;
+  }
+
+  static renderQuestion(question, ci, qi) {
+    const value = this.state.answers[ci][qi];
+    const name = `s1_${ci}_${qi}`;
+    return `
+      <div id="s1q_${ci}_${qi}" class="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 transition-colors sm:flex-row sm:items-center sm:gap-4">
+        <p class="flex-1 text-sm leading-relaxed text-slate-800"><span class="mr-1 font-semibold text-slate-400">${qi + 1}.</span>${UI.escape(question)}</p>
+        <div class="grid shrink-0 grid-cols-2 gap-2 sm:w-48" role="radiogroup" aria-label="Question ${qi + 1}">
+          <label class="cursor-pointer">
+            <input type="radio" name="${name}" value="1" data-ci="${ci}" data-qi="${qi}" class="peer sr-only" ${value === 1 ? 'checked' : ''}>
+            <span class="flex h-11 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-600 transition-colors hover:border-slate-400 hover:bg-slate-50 peer-checked:border-emerald-600 peer-checked:bg-emerald-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-500 peer-focus-visible:ring-offset-2">${this.icons.yes} Yes</span>
+          </label>
+          <label class="cursor-pointer">
+            <input type="radio" name="${name}" value="0" data-ci="${ci}" data-qi="${qi}" class="peer sr-only" ${value === 0 ? 'checked' : ''}>
+            <span class="flex h-11 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-600 transition-colors hover:border-slate-400 hover:bg-slate-50 peer-checked:border-rose-600 peer-checked:bg-rose-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-rose-500 peer-focus-visible:ring-offset-2">${this.icons.no} No</span>
+          </label>
+        </div>
+      </div>
+    `;
+  }
+
+  static renderTimer() {
+    return `<span data-timer class="${this.timerBase} bg-slate-100 text-slate-700">${this.icons.clock}<span data-timer-text>--:--</span></span>`;
+  }
+
+  static renderSummary() {
+    return `
+      <aside class="hidden lg:block">
+        <div class="card sticky top-24">
+          <div class="card-body space-y-5">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-slate-500">Time left</span>
+              ${this.renderTimer()}
+            </div>
+            <div>
+              <p class="text-sm text-slate-500">Current score</p>
+              <p class="mt-1 text-4xl font-bold tracking-tight text-slate-900"><span data-score>0.00</span><span class="text-lg font-medium text-slate-400"> / 5</span></p>
+            </div>
+            <div>
+              <div class="mb-1.5 flex justify-between text-sm">
+                <span class="text-slate-500">Answered</span>
+                <span data-answered class="font-medium text-slate-900"></span>
+              </div>
+              <div class="progress"><div data-progress class="progress-bar" style="width: 0%"></div></div>
+            </div>
+            <div class="space-y-2 border-t border-slate-200 pt-5">
+              <button data-submit onclick="Stage1TeamDetailPage.submitScore()" class="btn btn-primary w-full py-2.5"></button>
+              <button data-next onclick="Stage1TeamDetailPage.goToNextTeam()" class="btn btn-secondary w-full py-2.5"></button>
+              <p id="s1UpNext" class="truncate pt-1 text-center text-xs text-slate-500"></p>
+            </div>
+          </div>
+        </div>
+      </aside>
+    `;
+  }
+
+  static renderActionBar() {
+    return `
+      <div class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden" style="padding-bottom: env(safe-area-inset-bottom)">
+        <div class="progress h-1 rounded-none"><div data-progress class="progress-bar rounded-none" style="width: 0%"></div></div>
+        <div class="mx-auto max-w-3xl px-4 py-3">
+          <div class="mb-2.5 flex items-center justify-between gap-3 text-sm text-slate-600">
+            <p class="min-w-0 truncate"><span data-answered class="font-semibold text-slate-900"></span> answered · <span class="font-semibold text-slate-900"><span data-score>0.00</span> / 5</span></p>
+            ${this.renderTimer()}
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button data-submit onclick="Stage1TeamDetailPage.submitScore()" class="btn btn-primary h-12 text-base"></button>
+            <button data-next onclick="Stage1TeamDetailPage.goToNextTeam()" class="btn btn-secondary h-12 text-base"></button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  static onAnswer(e) {
+    const input = e.target;
+    if (!this.state || input.dataset.ci === undefined) return;
+    const ci = Number(input.dataset.ci);
+    const qi = Number(input.dataset.qi);
+    this.state.answers[ci][qi] = Number(input.value);
+    this.state.dirty = true;
+    document.getElementById(`s1q_${ci}_${qi}`).classList.remove(...this.highlight);
+    this.refresh();
+  }
+
+  static computeScore() {
+    const { criteria, answers } = this.state;
+    let total = 0;
+    let max = 0;
+    let answered = 0;
+    let count = 0;
+    const criteriaScores = {};
+    criteria.forEach((c, ci) => {
+      const yes = answers[ci].filter((v) => v === 1).length;
+      answered += answers[ci].filter((v) => v !== null).length;
+      count += c.questions.length;
+      total += yes * c.weight;
+      max += c.questions.length * c.weight;
+      criteriaScores[c.name] = yes;
+    });
+    // Normalized to a 5-point scale
+    return { score: max > 0 ? (total / max) * 5 : 0, answered, count, criteriaScores };
+  }
+
+  static nextTeam() {
+    const { teams, scoredIds, team } = this.state;
+    const idx = teams.findIndex((t) => t._id === team._id);
+    const others = idx === -1 ? teams : [...teams.slice(idx + 1), ...teams.slice(0, idx)];
+    return others.find((t) => !scoredIds.has(t._id)) || (idx === -1 ? null : teams[idx + 1]) || null;
+  }
+
+  static refresh() {
+    const s = this.state;
+    const root = document.getElementById('stage1Root');
+    if (!s || !root) return;
+
+    const { score, answered, count } = this.computeScore();
+    const scored = s.scoredIds.has(s.team._id);
+    const next = this.nextTeam();
+
+    root.querySelectorAll('[data-score]').forEach((el) => {
+      el.textContent = score.toFixed(2);
+    });
+    root.querySelectorAll('[data-answered]').forEach((el) => {
+      el.textContent = `${answered} / ${count}`;
+    });
+    root.querySelectorAll('[data-progress]').forEach((el) => {
+      el.style.width = `${count ? (answered / count) * 100 : 0}%`;
+    });
+
+    s.criteria.forEach((c, ci) => {
+      const badge = document.getElementById(`s1c_${ci}`);
+      const done = s.answers[ci].filter((v) => v !== null).length;
+      const yes = s.answers[ci].filter((v) => v === 1).length;
+      const complete = done === c.questions.length;
+      badge.className = complete ? 'badge badge-green' : 'badge badge-gray';
+      badge.textContent = complete ? `${yes}/${c.questions.length} yes` : `${done}/${c.questions.length} answered`;
+    });
+
+    const status = document.getElementById('s1Status');
+    if (scored && s.dirty) {
+      status.className = 'badge badge-yellow';
+      status.textContent = 'Unsaved changes';
+    } else {
+      status.className = scored ? 'badge badge-green' : 'badge badge-gray';
+      status.textContent = scored ? 'Scored' : 'Not scored yet';
+    }
+
+    root.querySelectorAll('[data-submit]').forEach((btn) => {
+      btn.disabled = s.saving || !count;
+      btn.innerHTML = s.saving ? `${this.icons.spinner} Saving…` : scored ? 'Update score' : 'Submit score';
+    });
+    root.querySelectorAll('[data-next]').forEach((btn) => {
+      btn.disabled = !scored || s.saving;
+      btn.classList.toggle('btn-success', scored);
+      btn.classList.toggle('btn-secondary', !scored);
+      btn.title = scored ? '' : 'Submit your score first';
+      btn.innerHTML = next ? `Next team ${this.icons.arrow}` : 'Finish';
+    });
+    document.getElementById('s1UpNext').textContent = !scored
+      ? 'Submit your score to continue'
+      : next
+        ? `Up next: ${next.name}`
+        : 'All teams scored';
+
+    const idx = s.teams.findIndex((t) => t._id === s.team._id);
+    const remaining = s.teams.filter((t) => !s.scoredIds.has(t._id)).length;
+    document.getElementById('s1Position').textContent = s.teams.length
+      ? `${idx >= 0 ? `Team ${idx + 1} of ${s.teams.length} · ` : ''}${remaining ? `${remaining} left to score` : 'All teams scored'}`
+      : '';
+  }
+
+  static startTimer(minutes) {
+    clearInterval(window.stage1RefreshInterval);
+    const endsAt = Date.now() + minutes * 60000;
+    const tick = () => {
+      const timers = document.querySelectorAll('#stage1Root [data-timer]');
+      const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      if (!timers.length || left === 0) clearInterval(window.stage1RefreshInterval);
+      if (!timers.length) return;
+      const tone =
+        left === 0
+          ? 'bg-red-600 text-white'
+          : left <= 60
+            ? 'bg-red-100 text-red-700'
+            : left <= 300
+              ? 'bg-amber-100 text-amber-800'
+              : 'bg-slate-100 text-slate-700';
+      const text =
+        left === 0
+          ? "Time's up"
+          : `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
+      timers.forEach((el) => {
+        el.className = `${this.timerBase} ${tone}`;
+        el.querySelector('[data-timer-text]').textContent = text;
+      });
+      if (left === 0) UI.toast("Time's up. Please submit your score.", 'warning', 6000);
+    };
+    window.stage1RefreshInterval = setInterval(tick, 1000);
+    tick();
+  }
+
+  static async submitScore() {
+    const s = this.state;
+    if (!s || s.saving) return;
+    if (!s.criteria.length) {
+      UI.toast('No criteria configured for Stage 1', 'error');
       return;
+    }
+
+    const missing = [];
+    s.answers.forEach((row, ci) =>
+      row.forEach((v, qi) => {
+        if (v === null) missing.push(`${ci}_${qi}`);
+      }),
+    );
+    if (missing.length) {
+      missing.forEach((key) => document.getElementById(`s1q_${key}`).classList.add(...this.highlight));
+      document.getElementById(`s1q_${missing[0]}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const proceed = await UI.confirm({
+        title: `${missing.length} unanswered question${missing.length === 1 ? '' : 's'}`,
+        message: 'Unanswered questions are counted as "No". Submit anyway?',
+        confirmText: 'Submit anyway',
+        cancelText: 'Keep scoring',
+      });
+      if (!proceed || this.state !== s) return;
     }
 
     const scores = {};
-
-    window.stageCriteria.forEach((criterion, criterionIndex) => {
-      scores[criterion.name] = [];
-      const questionCount = Array.isArray(criterion.questions)
-        ? criterion.questions.length
-        : criterion.questions;
-
-      for (
-        let questionIndex = 0;
-        questionIndex < questionCount;
-        questionIndex++
-      ) {
-        const checkboxId = `criterion_${criterionIndex}_question_${questionIndex}`;
-        const checkbox = document.getElementById(checkboxId);
-        scores[criterion.name].push(checkbox && checkbox.checked ? 1 : 0);
-      }
+    s.criteria.forEach((c, ci) => {
+      scores[c.name] = s.answers[ci].map((v) => (v === 1 ? 1 : 0));
     });
+    const { score, criteriaScores } = this.computeScore();
 
-    // Calculate total weighted score
-    let totalScore = 0;
-    let maxPossibleScore = 0;
-    
-    window.stageCriteria.forEach((criterion) => {
-      const criterionScores = scores[criterion.name];
-      const criterionTotal = criterionScores.reduce(
-        (sum, score) => sum + score,
-        0,
-      );
-      const questionCount = Array.isArray(criterion.questions) 
-        ? criterion.questions.length 
-        : criterion.questions;
-      
-      totalScore += criterionTotal * criterion.weight;
-      maxPossibleScore += questionCount * criterion.weight;
-    });
-
-    // Normalize to 5-point scale for backend consistency
-    const finalScore = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 5 : 0;
-
-    const criteriaScores = {};
-    window.stageCriteria.forEach((criterion) => {
-      const criterionScores = scores[criterion.name];
-      criteriaScores[criterion.name] = criterionScores.reduce(
-        (sum, score) => sum + score,
-        0,
-      );
-    });
-
+    s.saving = true;
+    this.refresh();
     try {
-      const response = await fetch('/api/scores', {
+      await UI.api('/api/scores', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authService.token}`,
-        },
-        body: JSON.stringify({
-          teamId: window.currentTeam._id,
+        body: {
+          teamId: s.team._id,
           stage: 1,
-          scores: scores,
-          totalScore: finalScore,
-          criteriaScores: criteriaScores,
-        }),
+          scores,
+          totalScore: score,
+          criteriaScores,
+        },
       });
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log('Score saved:', result);
-
-        const submitBtn = event
-          ? event.target
-          : document.getElementById('submitScoreBtn');
-        if (submitBtn) {
-          const originalText = submitBtn.textContent;
-          submitBtn.textContent = '✓ Score Saved!';
-          submitBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-          submitBtn.classList.add('bg-green-700');
-          submitBtn.disabled = true;
-
-          setTimeout(() => {
-            submitBtn.textContent = originalText;
-            submitBtn.classList.remove('bg-green-700');
-            submitBtn.classList.add('bg-green-600', 'hover:bg-green-700');
-            submitBtn.disabled = false;
-          }, 3000);
-        }
-
-        // Enable Next Team button after successful submission
-        Stage1TeamDetailPage.enableNextTeamButton();
-
-        alert(
-          'Score submitted successfully! You can continue to the next team or review your scores.',
-        );
-      } else {
-        const error = await response.text();
-        console.error('Server error:', error);
-        alert('Failed to submit score: ' + error);
-      }
+      if (this.state !== s) return;
+      missing.forEach((key) => {
+        const [ci, qi] = key.split('_').map(Number);
+        s.answers[ci][qi] = 0;
+        document.querySelector(`input[name="s1_${key}"][value="0"]`).checked = true;
+        document.getElementById(`s1q_${key}`).classList.remove(...this.highlight);
+      });
+      s.scoredIds.add(s.team._id);
+      s.dirty = false;
+      const next = this.nextTeam();
+      UI.toast(
+        `Score saved for ${s.team.name}.${next ? ` Next up: ${next.name}` : ' All your teams are scored.'}`,
+        'success',
+      );
     } catch (error) {
-      console.error('Error submitting score:', error);
-      alert('Failed to submit score. Please try again.');
-    }
-  }
-
-  static enableNextTeamButton() {
-    const nextTeamBtn = document.getElementById('nextTeamBtn');
-    if (nextTeamBtn) {
-      nextTeamBtn.disabled = false;
-      nextTeamBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-      nextTeamBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-      nextTeamBtn.removeAttribute('title');
-    }
-  }
-
-  static disableNextTeamButton() {
-    const nextTeamBtn = document.getElementById('nextTeamBtn');
-    if (nextTeamBtn) {
-      nextTeamBtn.disabled = true;
-      nextTeamBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-      nextTeamBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
-      nextTeamBtn.setAttribute('title', 'Please submit your score first');
+      UI.toast(`Failed to save score: ${error.message}`, 'error', 6000);
+    } finally {
+      s.saving = false;
+      if (this.state === s) this.refresh();
     }
   }
 
   static async goToNextTeam() {
-    // Check if button is disabled
-    const nextTeamBtn = document.getElementById('nextTeamBtn');
-    if (nextTeamBtn && nextTeamBtn.disabled) {
-      alert('Please submit your score before proceeding to the next team.');
+    const s = this.state;
+    if (!s || !s.scoredIds.has(s.team._id)) {
+      UI.toast('Please submit your score before moving to the next team.', 'warning');
       return;
     }
-
-    try {
-      const response = await fetch('/api/judges/assigned-teams', {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const teams = data.stage1Teams || [];
-        const currentTeamId = Stage1TeamDetailPage.getTeamIdFromUrl();
-
-        const currentIndex = teams.findIndex((t) => t._id === currentTeamId);
-
-        if (currentIndex !== -1 && currentIndex < teams.length - 1) {
-          const nextTeam = teams[currentIndex + 1];
-          router.navigate(`/stage1/${nextTeam._id}`);
-        } else {
-          alert('No more teams to evaluate. Returning to dashboard.');
-          router.navigate('/dashboard');
-        }
-      }
-    } catch (error) {
-      console.error('Error navigating to next team:', error);
+    if (
+      s.dirty &&
+      !(await UI.confirm({
+        title: 'Discard unsaved changes?',
+        message: 'Your latest changes for this team have not been saved.',
+        confirmText: 'Discard and continue',
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    const next = this.nextTeam();
+    if (next) {
+      router.navigate(`/stage1/${next._id}`);
+    } else {
+      UI.toast('All teams scored. Returning to dashboard.', 'success');
       router.navigate('/dashboard');
     }
+  }
+
+  static async goToDashboard() {
+    if (
+      this.state?.dirty &&
+      !(await UI.confirm({
+        title: 'Leave without saving?',
+        message: 'Your answers for this team have not been saved.',
+        confirmText: 'Leave',
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    router.navigate('/dashboard');
   }
 }

@@ -4,138 +4,36 @@ import {
   Get,
   Delete,
   Param,
-  UseInterceptors,
-  UploadedFile,
+  Body,
   HttpException,
   HttpStatus,
-  Sse,
-  MessageEvent,
-  Query,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { TeamsService, UploadProgress } from './teams.service';
-import * as multer from 'multer';
-import { Observable } from 'rxjs';
+import { TeamsService } from './teams.service';
 
 @Controller('api/teams')
 export class TeamsController {
   constructor(private readonly teamsService: TeamsService) {}
 
-  @Post('upload-csv')
-  @UseInterceptors(
-    FileInterceptor('csvFile', {
-      storage: multer.memoryStorage(),
-      fileFilter: (req, file, cb) => {
-        if (
-          file.mimetype === 'text/csv' ||
-          file.originalname.endsWith('.csv')
-        ) {
-          cb(null, true);
-        } else {
-          cb(new Error('Only CSV files are allowed'), false);
-        }
-      },
-    }),
-  )
-  async uploadCsv(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new HttpException('No file uploaded', HttpStatus.BAD_REQUEST);
+  @Post('import')
+  async importTeams(
+    @Body() body: { rows: Record<string, unknown>[]; rowNumbers?: number[] },
+  ) {
+    if (!Array.isArray(body?.rows) || body.rows.length === 0) {
+      throw new HttpException('No rows to import', HttpStatus.BAD_REQUEST);
     }
-
-    try {
-      const result = await this.teamsService.processCsvFile(file.buffer);
-      return {
-        message: 'Teams uploaded successfully',
-        count: result.count,
-        teams: result.teams,
-      };
-    } catch (error) {
+    if (body.rows.length > 2000) {
       throw new HttpException(
-        error.message || 'Failed to process CSV file',
+        'Too many rows in one request (max 2000)',
         HttpStatus.BAD_REQUEST,
       );
     }
-  }
-
-  @Post('upload-csv-stream')
-  @UseInterceptors(
-    FileInterceptor('csvFile', {
-      storage: multer.memoryStorage(),
-      fileFilter: (req, file, cb) => {
-        if (
-          file.mimetype === 'text/csv' ||
-          file.originalname.endsWith('.csv')
-        ) {
-          cb(null, true);
-        } else {
-          cb(new Error('Only CSV files are allowed'), false);
-        }
-      },
-      limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB limit
-      },
-    }),
-  )
-  async uploadCsvStream(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new HttpException('No file uploaded', HttpStatus.BAD_REQUEST);
-    }
-
-    try {
-      const uploadId = await this.teamsService.startStreamingCsvUpload(
-        file.buffer,
-      );
-      return {
-        message: 'Upload started',
-        uploadId: uploadId,
-        progressUrl: `/api/teams/upload-progress/${uploadId}`,
-      };
-    } catch (error) {
-      throw new HttpException(
-        error.message || 'Failed to start CSV upload',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-  }
-
-  @Sse('upload-progress/:uploadId')
-  getUploadProgress(
-    @Param('uploadId') uploadId: string,
-  ): Observable<MessageEvent> {
-    return this.teamsService.getUploadProgress(uploadId);
-  }
-
-  @Get('upload-status/:uploadId')
-  async getUploadStatus(
-    @Param('uploadId') uploadId: string,
-  ): Promise<UploadProgress | null> {
-    return await this.teamsService.getUploadStatus(uploadId);
-  }
-
-  @Post('cancel-upload/:uploadId')
-  async cancelUpload(@Param('uploadId') uploadId: string) {
-    await this.teamsService.cancelUpload(uploadId);
-    return { message: 'Upload cancelled successfully' };
+    return await this.teamsService.importTeams(body.rows, body.rowNumbers);
   }
 
   @Get('count')
   async getTeamsCount() {
     const count = await this.teamsService.getTeamsCount();
     return { count };
-  }
-
-  @Post('verify-upload/:uploadId')
-  async verifyUpload(@Param('uploadId') uploadId: string) {
-    try {
-      const verification =
-        await this.teamsService.verifyUploadResults(uploadId);
-      return verification;
-    } catch (error) {
-      throw new HttpException(
-        error.message || 'Failed to verify upload',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
   }
 
   @Get(':id')

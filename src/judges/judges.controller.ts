@@ -69,6 +69,7 @@ export class JudgesController {
         message: 'Judges uploaded successfully',
         count: result.count,
         judges: result.judges,
+        errors: result.errors,
       };
     } catch (error) {
       throw new HttpException(

@@ -1,11 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type TeamDocument = Team & Document;
 
 @Schema({ timestamps: true })
 export class Team {
-  @Prop({ required: true })
+  @Prop({ required: true, unique: true })
   name: string;
 
   @Prop({ required: true })
@@ -38,10 +38,10 @@ export class Team {
   @Prop()
   actualSolution: string; // Added: web, mobile, or ai
 
-  @Prop({ type: Types.ObjectId, ref: 'Panel' })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Panel' })
   panelStage1: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Panel' })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Panel' })
   panelStage2: Types.ObjectId;
 
   @Prop({ default: false })

@@ -14,15 +14,17 @@ export class UsersService {
 
   async getJudges(): Promise<User[]> {
     return await this.userModel
-      .find({ role: 'judge' })
-      .populate('panelAssignments.panel')
+      .find({ role: 'judge' }, { passwordHash: 0 })
+      .populate('panelAssignments.panel', 'name stage awardType')
+      .lean()
       .exec();
   }
 
   async findById(id: string): Promise<User | null> {
     return await this.userModel
-      .findById(id)
-      .populate('panelAssignments.panel')
+      .findById(id, { passwordHash: 0 })
+      .populate('panelAssignments.panel', 'name stage awardType')
+      .lean()
       .exec();
   }
 
@@ -76,12 +78,14 @@ export class UsersService {
     );
 
     // Add judge to assigned panels
-    for (const assignment of panelAssignments) {
-      if (assignment.panel) {
-        await this.panelModel.findByIdAndUpdate(assignment.panel, {
-          $addToSet: { judges: judgeId },
-        });
-      }
+    const panelIds = panelAssignments
+      .map((assignment) => assignment.panel)
+      .filter(Boolean);
+    if (panelIds.length > 0) {
+      await this.panelModel.updateMany(
+        { _id: { $in: panelIds } },
+        { $addToSet: { judges: judgeId } },
+      );
     }
   }
 
@@ -90,5 +94,6 @@ export class UsersService {
     if (!result) {
       throw new Error('User not found');
     }
+    await this.panelModel.updateMany({ judges: id }, { $pull: { judges: id } });
   }
 }

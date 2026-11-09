@@ -5,9 +5,13 @@ import { StagesService } from './stages/stages.service';
 import { PanelsService } from './panels/panels.service';
 import * as express from 'express';
 import { join } from 'path';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+export async function createApp() {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Spreadsheet imports send team rows as JSON
+  app.useBodyParser('json', { limit: '4mb' });
 
   // Serve static files
   app.use(express.static(join(__dirname, '..', 'public')));
@@ -21,21 +25,30 @@ async function bootstrap() {
     }
   });
 
-  // Create admin user on startup
-  const authService = app.get(AuthService);
-  await authService.createAdminUser();
+  try {
+    // Create admin user on startup
+    const authService = app.get(AuthService);
+    await authService.createAdminUser();
 
-  // Create default stages
-  const stagesService = app.get(StagesService);
-  await stagesService.createDefaultStages();
+    // Create default stages
+    const stagesService = app.get(StagesService);
+    await stagesService.createDefaultStages();
 
-  // Initialize Stage 2 with award-specific criteria
-  await initializeStage2(stagesService);
+    // Initialize Stage 2 with award-specific criteria
+    await initializeStage2(stagesService);
 
-  // Create Stage 2 panels
-  const panelsService = app.get(PanelsService);
-  await panelsService.createStage2Panels();
+    // Create Stage 2 panels
+    const panelsService = app.get(PanelsService);
+    await panelsService.createStage2Panels();
+  } catch (error) {
+    console.error('Error initializing services:', error);
+  }
 
+  return app;
+}
+
+async function bootstrap() {
+  const app = await createApp();
   await app.listen(process.env.PORT ?? 3000);
   console.log(
     `Application is running on: http://localhost:${process.env.PORT ?? 3000}`,
@@ -156,4 +169,6 @@ async function initializeStage2(stagesService: StagesService) {
   }
 }
 
-bootstrap();
+if (require.main === module) {
+  bootstrap();
+}

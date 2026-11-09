@@ -14,33 +14,22 @@ export class ScoresService {
   ) {}
 
   async createScore(scoreData: any): Promise<Score> {
-    // Check if score already exists for this judge, team, and stage
-    const existingScore = await this.scoreModel.findOne({
-      judge: scoreData.judgeId,
-      team: scoreData.teamId,
-      stage: scoreData.stage,
-    });
-
-    if (existingScore) {
-      // Update existing score
-      existingScore.totalScore = scoreData.totalScore;
-      existingScore.scores = scoreData.scores;
-      existingScore.criteriaScores = scoreData.criteriaScores || {};
-      existingScore.awardType = scoreData.awardType; // Added
-      return await existingScore.save();
-    } else {
-      // Create new score
-      const newScore = new this.scoreModel({
-        judge: scoreData.judgeId,
-        team: scoreData.teamId,
-        stage: scoreData.stage,
-        totalScore: scoreData.totalScore,
-        scores: scoreData.scores,
-        criteriaScores: scoreData.criteriaScores || {},
-        awardType: scoreData.awardType, // Added
-      });
-      return await newScore.save();
-    }
+    return await this.scoreModel
+      .findOneAndUpdate(
+        {
+          judge: scoreData.judgeId,
+          team: scoreData.teamId,
+          stage: scoreData.stage,
+        },
+        {
+          totalScore: scoreData.totalScore,
+          scores: scoreData.scores,
+          criteriaScores: scoreData.criteriaScores || {},
+          awardType: scoreData.awardType,
+        },
+        { upsert: true, new: true, runValidators: true },
+      )
+      .exec();
   }
 
   async getScoresForTeam(teamId: string, stage: number): Promise<Score[]> {
@@ -50,6 +39,7 @@ export class ScoresService {
         stage: stage,
       })
       .populate('judge', 'name email _id')
+      .lean()
       .exec();
   }
 
@@ -58,6 +48,7 @@ export class ScoresService {
       .find({ judge: judgeId })
       .populate('team', 'name challenge')
       .populate('judge', 'name email')
+      .lean()
       .exec();
   }
 
@@ -72,6 +63,7 @@ export class ScoresService {
         team: teamId,
         stage: stage,
       })
+      .lean()
       .exec();
   }
 
@@ -84,218 +76,172 @@ export class ScoresService {
   }
 
   async getScoringOverview() {
-    // Stage 1: Check teams that have been scored by ALL judges in their panel
-    const stage1Panels = await this.panelModel
-      .find({ stage: 1 })
-      .populate('judges')
-      .populate('teams')
-      .exec();
+    // A team counts as scored when ALL judges of its (first) panel scored it
+    const [panels, judgesByTeam] = await Promise.all([
+      this.panelModel
+        .find({}, { stage: 1, judges: 1, teams: 1 })
+        .lean()
+        .exec(),
+      this.scoreModel
+        .aggregate([
+          {
+            $group: {
+              _id: { team: '$team', stage: '$stage' },
+              judges: { $addToSet: '$judge' },
+            },
+          },
+        ])
+        .exec(),
+    ]);
 
-    let stage1ScoredCount = 0;
-    let stage1TotalCount = 0;
-    const stage1TeamsChecked = new Set<string>();
-
-    for (const panel of stage1Panels) {
-      const judgeIds = (panel.judges as any[]).map((j) =>
-        typeof j === 'string' ? j : j._id.toString(),
+    const scoredBy = new Map<string, Set<string>>();
+    for (const group of judgesByTeam) {
+      scoredBy.set(
+        `${group._id.stage}:${group._id.team}`,
+        new Set(group.judges.map(String)),
       );
-      const teamIds = (panel.teams as any[]).map((t) =>
-        typeof t === 'string' ? t : t._id.toString(),
-      );
-
-      for (const teamId of teamIds) {
-        if (stage1TeamsChecked.has(teamId)) continue;
-        stage1TeamsChecked.add(teamId);
-        stage1TotalCount++;
-
-        // Get all scores for this team in Stage 1
-        const scores = await this.scoreModel
-          .find({ team: teamId, stage: 1 })
-          .exec();
-
-        const scoredByJudges = scores.map((s) => s.judge.toString());
-
-        // Check if ALL judges in the panel scored this team
-        const allJudgesScored = judgeIds.every((judgeId) =>
-          scoredByJudges.includes(judgeId),
-        );
-
-        if (allJudgesScored) {
-          stage1ScoredCount++;
-        }
-      }
     }
 
-    // Stage 2: Check teams that have been scored by ALL judges in their panel
-    const stage2Panels = await this.panelModel
-      .find({ stage: 2 })
-      .populate('judges')
-      .populate('teams')
-      .exec();
-
-    let stage2ScoredCount = 0;
-    let stage2TotalCount = 0;
-    const stage2TeamsChecked = new Set<string>();
-
-    for (const panel of stage2Panels) {
-      const judgeIds = (panel.judges as any[]).map((j) =>
-        typeof j === 'string' ? j : j._id.toString(),
-      );
-      const teamIds = (panel.teams as any[]).map((t) =>
-        typeof t === 'string' ? t : t._id.toString(),
-      );
-
-      for (const teamId of teamIds) {
-        if (stage2TeamsChecked.has(teamId)) continue;
-        stage2TeamsChecked.add(teamId);
-        stage2TotalCount++;
-
-        // Get all scores for this team in Stage 2
-        const scores = await this.scoreModel
-          .find({ team: teamId, stage: 2 })
-          .exec();
-
-        const scoredByJudges = scores.map((s) => s.judge.toString());
-
-        // Check if ALL judges in the panel scored this team
-        const allJudgesScored = judgeIds.every((judgeId) =>
-          scoredByJudges.includes(judgeId),
-        );
-
-        if (allJudgesScored) {
-          stage2ScoredCount++;
+    const overview: Record<string, { scored: number; notScored: number; total: number }> = {};
+    for (const stage of [1, 2]) {
+      let scored = 0;
+      const teamsChecked = new Set<string>();
+      for (const panel of panels) {
+        if (panel.stage !== stage) continue;
+        for (const teamId of panel.teams.map(String)) {
+          if (teamsChecked.has(teamId)) continue;
+          teamsChecked.add(teamId);
+          const scoredByJudges = scoredBy.get(`${stage}:${teamId}`);
+          if (panel.judges.every((judgeId) => scoredByJudges?.has(String(judgeId)))) {
+            scored++;
+          }
         }
       }
+      overview[`stage${stage}`] = {
+        scored,
+        notScored: teamsChecked.size - scored,
+        total: teamsChecked.size,
+      };
     }
 
-    return {
-      stage1: {
-        scored: stage1ScoredCount,
-        notScored: stage1TotalCount - stage1ScoredCount,
-        total: stage1TotalCount,
-      },
-      stage2: {
-        scored: stage2ScoredCount,
-        notScored: stage2TotalCount - stage2ScoredCount,
-        total: stage2TotalCount,
-      },
-    };
+    return overview;
   }
 
-  async getTopTeams(stage: number, limit: number) {
-    // Get ALL teams first
-    const allTeams = await this.teamModel.find().exec();
+  async getTopTeams(stage: number | 'final', limit: number) {
+    if (stage !== 1 && stage !== 2 && stage !== 'final') return [];
 
-    if (stage === 1) {
-      // Stage 1: Simple average across all judges
-      const scores = await this.scoreModel
-        .aggregate([
-          { $match: { stage: 1 } },
-          {
-            $group: {
-              _id: '$team',
-              averageScore: { $avg: '$totalScore' },
-              judgeCount: { $sum: 1 },
-            },
-          },
-        ])
-        .exec();
+    const [teams, stage1Averages, awardAverages] = await Promise.all([
+      this.teamModel.find({}, { name: 1, challenge: 1 }).lean().exec(),
+      stage === 2
+        ? []
+        : this.scoreModel
+            .aggregate([
+              { $match: { stage: 1 } },
+              {
+                $group: {
+                  _id: '$team',
+                  averageScore: { $avg: '$totalScore' },
+                  judgeCount: { $sum: 1 },
+                },
+              },
+            ])
+            .exec(),
+      // Stage 2 per-award averages, in the order each award was first scored (tie-break for the best award)
+      stage === 1
+        ? []
+        : this.scoreModel
+            .aggregate([
+              { $match: { stage: 2 } },
+              {
+                $group: {
+                  _id: { team: '$team', awardType: '$awardType' },
+                  awardAverage: { $avg: '$totalScore' },
+                  judgeCount: { $sum: 1 },
+                  firstScore: { $min: '$_id' },
+                },
+              },
+              { $sort: { firstScore: 1 } },
+            ])
+            .exec(),
+    ]);
 
-      // Create a map of team scores
-      const scoreMap = new Map();
-      scores.forEach((score) => {
-        scoreMap.set(score._id.toString(), {
-          averageScore: score.averageScore,
-          judgeCount: score.judgeCount,
+    const stage1Scores = new Map(
+      stage1Averages.map((score) => [
+        String(score._id),
+        { averageScore: score.averageScore, judgeCount: score.judgeCount },
+      ]),
+    );
+
+    // Stage 2: MAX of per-award averages (awards correspond to Stage 2 panels)
+    const stage2Scores = new Map<
+      string,
+      { averageScore: number; judgeCount: number; bestAward: string }
+    >();
+    for (const record of awardAverages) {
+      const teamId = String(record._id.team);
+      const award = record._id.awardType || 'Unknown Award';
+      const current = stage2Scores.get(teamId);
+      if (!current) {
+        stage2Scores.set(teamId, {
+          averageScore: record.awardAverage,
+          judgeCount: record.judgeCount,
+          bestAward: award,
         });
-      });
-
-      // Process all teams
-      const teamResults = allTeams.map((team) => {
-        const teamScore = scoreMap.get(team._id.toString());
-        return {
-          _id: team._id,
-          name: team.name,
-          challenge: team.challenge,
-          averageScore: teamScore?.averageScore || 0,
-          judgeCount: teamScore?.judgeCount || 0,
-          hasScore: !!teamScore,
-        };
-      });
-
-      // Sort: scored teams first (by score desc), then unscored teams
-      teamResults.sort((a, b) => {
-        if (a.hasScore && !b.hasScore) return -1;
-        if (!a.hasScore && b.hasScore) return 1;
-        if (a.hasScore && b.hasScore) return b.averageScore - a.averageScore;
-        return 0; // Both unscored, maintain original order
-      });
-
-      return teamResults.slice(0, limit);
-    } else if (stage === 2) {
-      // Stage 2: MAX of per-award averages (awards correspond to Stage 2 panels)
-      // First, get all Stage 2 scores grouped by team and awardType
-      const awardAverages = await this.scoreModel
-        .aggregate([
-          { $match: { stage: 2 } },
-          {
-            $group: {
-              _id: { team: '$team', awardType: '$awardType' },
-              awardAverage: { $avg: '$totalScore' },
-              judgeCount: { $sum: 1 },
-            },
-          },
-        ])
-        .exec();
-
-      // Now group by team and take the MAX award average
-      const teamScores = new Map();
-      for (const record of awardAverages) {
-        const teamId = record._id.team.toString();
-        const awardAvg = record.awardAverage;
-
-        if (!teamScores.has(teamId)) {
-          teamScores.set(teamId, {
-            averageScore: awardAvg,
-            judgeCount: record.judgeCount,
-            awardCount: 1,
-          });
-        } else {
-          const current = teamScores.get(teamId);
-          // Take the MAX award average
-          if (awardAvg > current.averageScore) {
-            current.averageScore = awardAvg;
-          }
-          current.judgeCount += record.judgeCount;
-          current.awardCount += 1;
+      } else {
+        if (record.awardAverage > current.averageScore) {
+          current.averageScore = record.awardAverage;
+          current.bestAward = award;
         }
+        current.judgeCount += record.judgeCount;
       }
-
-      // Process all teams
-      const teamResults = allTeams.map((team) => {
-        const teamScore = teamScores.get(team._id.toString());
-        return {
-          _id: team._id,
-          name: team.name,
-          challenge: team.challenge,
-          averageScore: teamScore?.averageScore || 0,
-          judgeCount: teamScore?.judgeCount || 0,
-          hasScore: !!teamScore,
-        };
-      });
-
-      // Sort: scored teams first (by score desc), then unscored teams
-      teamResults.sort((a, b) => {
-        if (a.hasScore && !b.hasScore) return -1;
-        if (!a.hasScore && b.hasScore) return 1;
-        if (a.hasScore && b.hasScore) return b.averageScore - a.averageScore;
-        return 0; // Both unscored, maintain original order
-      });
-
-      return teamResults.slice(0, limit);
     }
 
-    return [];
+    // Scored teams first (by score desc), then unscored teams in original order
+    const rank = <T>(rows: T[], hasScore: (row: T) => boolean, score: (row: T) => number) =>
+      rows
+        .sort((a, b) => {
+          if (hasScore(a) && !hasScore(b)) return -1;
+          if (!hasScore(a) && hasScore(b)) return 1;
+          if (hasScore(a) && hasScore(b)) return score(b) - score(a);
+          return 0;
+        })
+        .slice(0, limit);
+
+    if (stage === 'final') {
+      // Final score: 60% Stage 1 average + 40% best Stage 2 award average
+      const finalScores = teams.map((team) => {
+        const stage1Score = stage1Scores.get(String(team._id))?.averageScore || 0;
+        const stage2 = stage2Scores.get(String(team._id));
+        const stage2BestScore = Math.max(stage2?.averageScore || 0, 0);
+        return {
+          _id: team._id,
+          name: team.name,
+          challenge: team.challenge,
+          stage1Score,
+          stage2BestScore,
+          bestAward: stage2BestScore > 0 ? stage2!.bestAward : 'N/A',
+          finalScore: 0.6 * stage1Score + 0.4 * stage2BestScore,
+          hasStage1Score: stage1Score > 0,
+          hasStage2Score: stage2BestScore > 0,
+          hasAnyScore: stage1Score > 0 || stage2BestScore > 0,
+        };
+      });
+      return rank(finalScores, (t) => t.hasAnyScore, (t) => t.finalScore);
+    }
+
+    const teamScores = stage === 1 ? stage1Scores : stage2Scores;
+    const teamResults = teams.map((team) => {
+      const teamScore = teamScores.get(String(team._id));
+      return {
+        _id: team._id,
+        name: team.name,
+        challenge: team.challenge,
+        averageScore: teamScore?.averageScore || 0,
+        judgeCount: teamScore?.judgeCount || 0,
+        hasScore: !!teamScore,
+      };
+    });
+    return rank(teamResults, (t) => t.hasScore, (t) => t.averageScore);
   }
 
   // Added: Get top 60 teams from Stage 1 for Stage 2 qualification
@@ -313,6 +259,7 @@ export class ScoresService {
       })
       .populate('team')
       .populate('judge')
+      .lean()
       .exec();
 
     return scores;

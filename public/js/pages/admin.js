@@ -1,540 +1,224 @@
 // Admin Page
 class AdminPage {
   static render() {
-    return `
-            <div class="min-h-screen bg-gray-50 flex">
-                ${Sidebar.render()}
-                
-                <div class="flex-1 ml-64">
-                    <div class="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-                        <div class="flex justify-between items-center">
-                            <h1 class="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-                            <div class="flex items-center space-x-4">
-                                <span class="text-gray-600">Welcome, ${authService.getUser()?.name || 'Admin'}</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="p-6">
-                        <!-- Quick Stats -->
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            <div class="bg-white rounded-lg shadow p-6">
-                                <div class="flex items-center">
-                                    <div class="p-2 bg-blue-100 rounded-lg">
-                                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-4">
-                                        <p class="text-sm font-medium text-gray-600">Total Teams</p>
-                                        <p class="text-2xl font-semibold text-gray-900" id="totalTeams">--</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="bg-white rounded-lg shadow p-6">
-                                <div class="flex items-center">
-                                    <div class="p-2 bg-green-100 rounded-lg">
-                                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-4">
-                                        <p class="text-sm font-medium text-gray-600">Total Judges</p>
-                                        <p class="text-2xl font-semibold text-gray-900" id="totalJudges">--</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-<div class="bg-white rounded-xl shadow p-4 flex items-center justify-between max-w-md">
+    const stat = (id, label, icon, tone) => `
+      <div class="stat-card">
+        <div class="stat-icon ${tone}">${Sidebar.icon(icon, 'h-6 w-6')}</div>
+        <div class="min-w-0">
+          <p class="stat-label">${label}</p>
+          <p class="stat-value" id="${id}"><span class="skeleton inline-block h-7 w-14 align-middle"></span></p>
+        </div>
+      </div>`;
+    const stageProgress = (stage, barClass) => `
+      <div class="card p-5">
+        <div class="flex items-center justify-between">
+          <p class="text-sm font-medium text-slate-700">Stage ${stage} judging</p>
+          <span id="stage${stage}Percent" class="text-sm font-semibold text-slate-900">–</span>
+        </div>
+        <div class="progress mt-3"><div id="stage${stage}Bar" class="progress-bar ${barClass}" style="width: 0%"></div></div>
+        <div class="mt-3 flex justify-between text-xs text-slate-500">
+          <span><span id="stage${stage}Scored" class="font-semibold text-emerald-600">–</span> fully scored</span>
+          <span><span id="stage${stage}NotScored" class="font-semibold text-amber-600">–</span> pending</span>
+          <span><span id="stage${stage}Total" class="font-semibold text-slate-700">–</span> teams</span>
+        </div>
+      </div>`;
 
-  <!-- Left Section -->
-  <div class="flex items-center space-x-4">
-    <!-- Icon box -->
-    <div class="flex items-center justify-center w-12 h-12 rounded-lg bg-purple-100">
-      <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M13 10V3L4 14h7v7l9-11h-7z"/>
-      </svg>
-    </div>
+    return Layout.admin({
+      title: 'Dashboard',
+      subtitle: `Welcome back, ${UI.escape(authService.getUser()?.name || 'Admin')}`,
+      actions: `
+        <button onclick="router.navigate('/admin/stage2-qualify')" class="btn btn-primary">
+          ${Sidebar.icon('rocket', 'h-4 w-4')} Manage Stage 2
+        </button>`,
+      content: `
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          ${stat('totalTeams', 'Total Teams', 'teams', 'bg-blue-100 text-blue-600')}
+          ${stat('totalJudges', 'Total Judges', 'judges', 'bg-emerald-100 text-emerald-600')}
+          ${stageProgress(1, 'bg-blue-600')}
+          ${stageProgress(2, 'bg-purple-600')}
+        </div>
 
-    <!-- Stage text -->
-    <div>
-      <p class="text-sm text-gray-500">Current Stage</p>
-      <p class="text-xl font-bold text-gray-900">Stage 1</p>
-    </div>
-  </div>
-
-  <!-- Right Section -->
-  <button
-    onclick="router.navigate('/admin/stage2-qualify')"
-    class="flex items-center gap-2 px-4 py-2 rounded-lg font-medium
-           bg-gradient-to-r from-purple-600 to-blue-600 text-white
-           hover:from-purple-700 hover:to-blue-700
-           transition-all duration-200 shadow-sm hover:shadow-md"
-  >
-    🚀 <span>Manage Stage&nbsp;2</span>
-  </button>
-
-</div>
-
-                        </div>
-
-                        <!-- Scoring Overview -->
-                        <div class="bg-white rounded-lg shadow mb-6">
-
-                        <!-- Top N Teams -->
-                        <div class="bg-white rounded-lg shadow">
-                            <div class="px-6 py-4 border-b border-gray-200">
-                                <div class="flex justify-between items-center">
-                                    <h3 class="text-lg font-medium text-gray-900">Top Teams</h3>
-                                    <div class="flex items-center space-x-4">
-                                        <div class="flex items-center space-x-2">
-                                            <label class="text-sm text-gray-600">Stage:</label>
-                                            <select id="topTeamsStage" class="px-3 py-1 border border-gray-300 rounded-md text-sm" onchange="AdminPage.loadTopTeams()">
-                                                <option value="1">Stage 1</option>
-                                                <option value="2">Stage 2</option>
-                                                <option value="final">Final Score</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex items-center space-x-2">
-                                            <label class="text-sm text-gray-600">Top:</label>
-                                            <input 
-                                                type="number" 
-                                                id="topTeamsCount" 
-                                                value="10" 
-                                                min="1" 
-                                                max="50"
-                                                class="w-20 px-3 py-1 border border-gray-300 rounded-md text-sm"
-                                                onchange="AdminPage.loadTopTeams()"
-                                            >
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="p-6">
-                                <div id="topTeamsTable">
-                                    <!-- Top teams will be loaded here -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        <div class="card mt-6">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Top Teams</h3>
+              <p class="mt-0.5 text-xs text-slate-500">Final score = 60% Stage 1 average + 40% best Stage 2 award average · refreshes every 10s</p>
             </div>
-        `;
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="inline-flex rounded-lg border border-slate-300 bg-white p-0.5" role="tablist">
+                ${[['1', 'Stage 1'], ['2', 'Stage 2'], ['final', 'Final']].map(([value, label]) => `
+                  <button data-stage="${value}" onclick="AdminPage.setStage('${value}')"
+                    class="top-stage-tab rounded-md px-3 py-1.5 text-sm font-medium ${value === '1' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}">${label}</button>`).join('')}
+              </div>
+              <label class="flex items-center gap-2 text-sm text-slate-600">
+                Top
+                <select id="topTeamsCount" class="input w-24 py-1.5" onchange="AdminPage.loadTopTeams()">
+                  ${[10, 25, 50, 100, 1000].map((n) => `<option value="${n}">${n === 1000 ? 'All' : n}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+          </div>
+          <div id="topTeamsTable" class="overflow-x-auto">
+            <table class="table"><tbody>${UI.skeletonRows(6, 6)}</tbody></table>
+          </div>
+        </div>
+      `,
+    });
   }
 
+  static stage = '1';
+
   static afterRender() {
-    // Load team statistics
+    AdminPage.stage = '1';
     AdminPage.loadStats();
     AdminPage.loadScoringOverview();
     AdminPage.loadTopTeams();
 
-    // Setup event listeners for form controls
-    AdminPage.setupEventListeners();
-
-    // Auto-refresh every 10 seconds
     if (window.adminRefreshInterval) {
       clearInterval(window.adminRefreshInterval);
     }
-
     window.adminRefreshInterval = setInterval(() => {
       AdminPage.loadScoringOverview();
       AdminPage.loadTopTeams();
-    }, 10000); // 10 seconds
+    }, 10000);
   }
 
-  static setupEventListeners() {
-    // Remove existing event listeners to prevent duplicates
-    const stageSelect = document.getElementById('topTeamsStage');
-    const countInput = document.getElementById('topTeamsCount');
-
-    if (stageSelect) {
-      // Remove any existing listeners
-      stageSelect.removeEventListener('change', AdminPage.handleStageChange);
-      // Add new listener
-      stageSelect.addEventListener('change', AdminPage.handleStageChange);
-    }
-
-    if (countInput) {
-      // Remove any existing listeners
-      countInput.removeEventListener('change', AdminPage.handleCountChange);
-      // Add new listener
-      countInput.addEventListener('change', AdminPage.handleCountChange);
-    }
-  }
-
-  static handleStageChange() {
-    AdminPage.loadTopTeams();
-  }
-
-  static handleCountChange() {
+  static setStage(stage) {
+    AdminPage.stage = stage;
+    document.querySelectorAll('.top-stage-tab').forEach((tab) => {
+      const active = tab.dataset.stage === stage;
+      tab.classList.toggle('bg-blue-600', active);
+      tab.classList.toggle('text-white', active);
+      tab.classList.toggle('text-slate-600', !active);
+      tab.classList.toggle('hover:bg-slate-100', !active);
+    });
+    document.getElementById('topTeamsTable').innerHTML = `<table class="table"><tbody>${UI.skeletonRows(6, 6)}</tbody></table>`;
     AdminPage.loadTopTeams();
   }
 
   static async loadStats() {
-    try {
-      // Load teams count
-      const teamsResponse = await fetch('/api/teams/count', {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
-
-      if (teamsResponse.ok) {
-        const teamsData = await teamsResponse.json();
-        document.getElementById('totalTeams').textContent =
-          teamsData.count || 0;
-      }
-
-      // Load judges count
-      const judgesResponse = await fetch('/api/users/judges', {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
-
-      if (judgesResponse.ok) {
-        const judgesData = await judgesResponse.json();
-        console.log('Judges data:', judgesData);
-        const judgesCount = judgesData.length;
-        console.log('Total judges count:', judgesCount);
-        document.getElementById('totalJudges').textContent = judgesCount;
-      } else {
-        console.error('Failed to fetch judges:', judgesResponse.status);
-        document.getElementById('totalJudges').textContent = '0';
-      }
-    } catch (error) {
-      console.log('Could not load statistics');
-    }
+    const [teams, judges] = await Promise.allSettled([
+      UI.api('/api/teams/count'),
+      UI.api('/api/users/judges'),
+    ]);
+    if (!document.getElementById('totalTeams')) return;
+    document.getElementById('totalTeams').textContent =
+      teams.status === 'fulfilled' ? teams.value.count.toLocaleString() : '–';
+    document.getElementById('totalJudges').textContent =
+      judges.status === 'fulfilled' ? judges.value.length.toLocaleString() : '–';
   }
 
   static async loadScoringOverview() {
     try {
-      const response = await fetch('/api/scores/overview', {
-        headers: {
-          Authorization: `Bearer ${authService.token}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-
-        // Stage 1
-        document.getElementById('stage1Scored').textContent =
-          data.stage1?.scored || 0;
-        document.getElementById('stage1NotScored').textContent =
-          data.stage1?.notScored || 0;
-        document.getElementById('stage1Total').textContent =
-          data.stage1?.total || 0;
-
-        // Stage 2
-        document.getElementById('stage2Scored').textContent =
-          data.stage2?.scored || 0;
-        document.getElementById('stage2NotScored').textContent =
-          data.stage2?.notScored || 0;
-        document.getElementById('stage2Total').textContent =
-          data.stage2?.total || 0;
+      const data = await UI.api('/api/scores/overview');
+      if (!document.getElementById('stage1Bar')) return;
+      for (const stage of [1, 2]) {
+        const overview = data[`stage${stage}`] || { scored: 0, notScored: 0, total: 0 };
+        const percent = overview.total ? Math.round((overview.scored / overview.total) * 100) : 0;
+        document.getElementById(`stage${stage}Scored`).textContent = overview.scored;
+        document.getElementById(`stage${stage}NotScored`).textContent = overview.notScored;
+        document.getElementById(`stage${stage}Total`).textContent = overview.total;
+        document.getElementById(`stage${stage}Percent`).textContent = `${percent}%`;
+        document.getElementById(`stage${stage}Bar`).style.width = `${percent}%`;
       }
     } catch (error) {
-      console.log('Could not load scoring overview');
+      console.error('Could not load scoring overview', error);
     }
   }
 
   static async loadTopTeams() {
-    const stage = document.getElementById('topTeamsStage')?.value || 1;
+    const stage = AdminPage.stage;
     const count = document.getElementById('topTeamsCount')?.value || 10;
-
+    const container = document.getElementById('topTeamsTable');
     try {
+      const teams = await UI.api(`/api/scores/top?stage=${stage}&limit=${count}`);
+      if (AdminPage.stage !== stage || !document.getElementById('topTeamsTable')) return;
       if (stage === 'final') {
-        // Calculate final scores
-        await AdminPage.loadFinalScores(count);
+        AdminPage.renderFinalScores(teams);
       } else {
-        const response = await fetch(
-          `/api/scores/top?stage=${stage}&limit=${count}`,
-          {
-            headers: {
-              Authorization: `Bearer ${authService.token}`,
-            },
-          },
-        );
-
-        if (response.ok) {
-          const teams = await response.json();
-          AdminPage.renderTopTeams(teams, stage);
-        }
+        AdminPage.renderTopTeams(teams);
       }
     } catch (error) {
-      console.log('Could not load top teams');
+      if (!container) return;
+      container.innerHTML = `
+        <div class="flex flex-col items-center gap-3 py-10 text-sm text-slate-500">
+          <p>Could not load top teams: ${UI.escape(error.message)}</p>
+          <button onclick="AdminPage.loadTopTeams()" class="btn btn-secondary btn-sm">Retry</button>
+        </div>`;
     }
   }
 
-  static async loadFinalScores(count) {
-    try {
-      // Get all teams
-      const teamsResponse = await fetch('/api/teams', {
-        headers: { Authorization: `Bearer ${authService.token}` },
-      });
+  static rank(index, hasScore) {
+    if (!hasScore) return '<span class="text-slate-400">–</span>';
+    const medals = ['🥇', '🥈', '🥉'];
+    return index < 3
+      ? `<span class="text-lg">${medals[index]}</span>`
+      : `<span class="font-semibold text-slate-700">#${index + 1}</span>`;
+  }
 
-      if (!teamsResponse.ok) return;
-
-      const teams = await teamsResponse.json();
-      const finalScores = [];
-
-      for (const team of teams) {
-        // Get Stage 1 average score
-        const stage1Response = await fetch(
-          `/api/scores/team/${team._id}/stage/1`,
-          {
-            headers: { Authorization: `Bearer ${authService.token}` },
-          },
-        );
-
-        let stage1Score = 0;
-        if (stage1Response.ok) {
-          const stage1Scores = await stage1Response.json();
-          if (stage1Scores.length > 0) {
-            const total = stage1Scores.reduce(
-              (sum, s) => sum + s.totalScore,
-              0,
-            );
-            stage1Score = total / stage1Scores.length;
-          }
-        }
-
-        // Get Stage 2 scores (best award score: MAX of per-award averages)
-        const stage2Response = await fetch(
-          `/api/scores/team/${team._id}/stage/2`,
-          {
-            headers: { Authorization: `Bearer ${authService.token}` },
-          },
-        );
-
-        let bestStage2Score = 0;
-        let bestAward = 'N/A';
-        if (stage2Response.ok) {
-          const stage2Scores = await stage2Response.json();
-          if (stage2Scores.length > 0) {
-            // Build judge -> awardType map from Stage 2 panels (fallback if awardType missing)
-            let judgeAwardMap = {};
-            try {
-              const panelsRes = await fetch('/api/panels', {
-                headers: { Authorization: `Bearer ${authService.token}` },
-              });
-              if (panelsRes.ok) {
-                const panels = await panelsRes.json();
-                panels
-                  .filter((p) => p.stage === 2)
-                  .forEach((p) => {
-                    const award = p.awardType || 'Unknown Award';
-                    (p.judges || []).forEach((j) => {
-                      const id =
-                        typeof j === 'string' ? j : j?._id || j?.toString();
-                      if (id) judgeAwardMap[id] = award;
-                    });
-                  });
-              }
-            } catch (e) {}
-
-            // Group by awardType and find average per award
-            const awardScores = {};
-            for (const score of stage2Scores) {
-              const judgeId = score.judge?._id || score.judge;
-              const award =
-                score.awardType || judgeAwardMap[judgeId] || 'Unknown Award';
-              if (!awardScores[award]) awardScores[award] = [];
-              awardScores[award].push(score.totalScore);
-            }
-
-            for (const award in awardScores) {
-              const scores = awardScores[award];
-              const avgScore =
-                scores.reduce((sum, s) => sum + s, 0) / scores.length;
-              if (avgScore > bestStage2Score) {
-                bestStage2Score = avgScore;
-                bestAward = award;
-              }
-            }
-          }
-        }
-
-        // Calculate final score: 60% Stage 1 + 40% Stage 2 (best panel)
-        const finalScore = 0.6 * stage1Score + 0.4 * bestStage2Score;
-        finalScores.push({
-          name: team.name,
-          challenge: team.challenge,
-          stage1Score: stage1Score,
-          stage2BestScore: bestStage2Score,
-          bestAward: bestAward,
-          finalScore: finalScore,
-          hasStage1Score: stage1Score > 0,
-          hasStage2Score: bestStage2Score > 0,
-          hasAnyScore: stage1Score > 0 || bestStage2Score > 0,
-        });
-      }
-
-      // Sort: teams with scores first (by final score desc), then teams without scores
-      finalScores.sort((a, b) => {
-        if (a.hasAnyScore && !b.hasAnyScore) return -1;
-        if (!a.hasAnyScore && b.hasAnyScore) return 1;
-        if (a.hasAnyScore && b.hasAnyScore) return b.finalScore - a.finalScore;
-        return 0; // Both unscored, maintain original order
-      });
-
-      // Take top N
-      const topTeams = finalScores.slice(0, parseInt(count));
-
-      AdminPage.renderFinalScores(topTeams);
-    } catch (error) {
-      console.error('Failed to load final scores:', error);
-    }
+  static statusBadge(hasScore) {
+    return hasScore
+      ? '<span class="badge badge-green">Scored</span>'
+      : '<span class="badge badge-gray">Pending</span>';
   }
 
   static renderTopTeams(teams) {
     const container = document.getElementById('topTeamsTable');
-
     if (!teams || teams.length === 0) {
-      container.innerHTML = `
-                <div class="text-center py-8 text-gray-500">
-                    <p class="text-sm">No teams available</p>
-                </div>
-            `;
+      container.innerHTML = UI.emptyState('No teams yet', 'Import teams to see rankings here');
       return;
     }
 
     container.innerHTML = `
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team Name</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Challenge</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Average Score</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Judges</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    ${teams
-                      .map(
-                        (team, index) => `
-                        <tr class="${team.hasScore && index < 3 ? 'bg-yellow-50' : !team.hasScore ? 'bg-gray-50' : ''}">
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="text-sm font-bold ${team.hasScore && index === 0 ? 'text-yellow-600' : team.hasScore && index === 1 ? 'text-gray-500' : team.hasScore && index === 2 ? 'text-orange-600' : 'text-gray-900'}">
-                                    ${team.hasScore ? (index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '#' + (index + 1)) : '--'}
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm font-medium text-gray-900">${team.name}</div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm text-gray-900">${team.challenge}</div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                ${
-                                  team.hasScore
-                                    ? `<div class="text-sm font-bold text-blue-600">${team.averageScore.toFixed(2)}</div>`
-                                    : `<div class="text-sm text-gray-400">No Score</div>`
-                                }
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                ${
-                                  team.hasScore
-                                    ? `<div class="text-sm text-gray-500">${team.judgeCount} judge(s)</div>`
-                                    : `<div class="text-sm text-gray-400">--</div>`
-                                }
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                ${
-                                  team.hasScore
-                                    ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Scored</span>`
-                                    : `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Pending</span>`
-                                }
-                            </td>
-                        </tr>
-                    `,
-                      )
-                      .join('')}
-                </tbody>
-            </table>
-        `;
+      <table class="table">
+        <thead>
+          <tr><th class="w-16">Rank</th><th>Team</th><th>Challenge</th><th>Average Score</th><th>Judges</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          ${teams
+            .map(
+              (team, index) => `
+            <tr class="cursor-pointer ${team.hasScore && index < 3 ? 'bg-amber-50/60' : ''}" onclick="router.navigate('/admin/teams/${team._id}')">
+              <td>${AdminPage.rank(index, team.hasScore)}</td>
+              <td class="font-medium text-slate-900">${UI.escape(team.name)}</td>
+              <td class="text-slate-600">${UI.escape(team.challenge)}</td>
+              <td>${team.hasScore ? `<span class="font-semibold text-blue-600">${team.averageScore.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+              <td class="text-slate-500">${team.hasScore ? `${team.judgeCount} judge${team.judgeCount === 1 ? '' : 's'}` : '–'}</td>
+              <td>${AdminPage.statusBadge(team.hasScore)}</td>
+            </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>
+    `;
   }
 
   static renderFinalScores(teams) {
     const container = document.getElementById('topTeamsTable');
-
     if (!teams || teams.length === 0) {
-      container.innerHTML = `
-        <div class="text-center py-8 text-gray-500">
-          <p class="text-sm">No teams available</p>
-        </div>
-      `;
+      container.innerHTML = UI.emptyState('No teams yet', 'Import teams to see rankings here');
       return;
     }
 
     container.innerHTML = `
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team Name</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Challenge</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stage 1 (60%)</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stage 2 Best (40%)</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Best Award</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Final Score</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-          </tr>
+      <table class="table">
+        <thead>
+          <tr><th class="w-16">Rank</th><th>Team</th><th>Challenge</th><th>Stage 1 (60%)</th><th>Stage 2 Best (40%)</th><th>Best Award</th><th>Final Score</th><th>Status</th></tr>
         </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
+        <tbody>
           ${teams
             .map(
               (team, index) => `
-            <tr class="${team.hasAnyScore && index < 3 ? 'bg-gradient-to-r from-yellow-50 to-orange-50' : !team.hasAnyScore ? 'bg-gray-50' : ''}">
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span class="text-sm font-bold ${team.hasAnyScore && index === 0 ? 'text-yellow-600' : team.hasAnyScore && index === 1 ? 'text-gray-500' : team.hasAnyScore && index === 2 ? 'text-orange-600' : 'text-gray-900'}">
-                  ${team.hasAnyScore ? (index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '#' + (index + 1)) : '--'}
-                </span>
-              </td>
-              <td class="px-6 py-4">
-                <div class="text-sm font-medium text-gray-900">${team.name}</div>
-              </td>
-              <td class="px-6 py-4">
-                <div class="text-sm text-gray-900">${team.challenge}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                ${
-                  team.hasStage1Score
-                    ? `<div class="text-sm text-blue-600 font-medium">${team.stage1Score.toFixed(2)}</div>`
-                    : `<div class="text-sm text-gray-400">No Score</div>`
-                }
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                ${
-                  team.hasStage2Score
-                    ? `<div class="text-sm text-purple-600 font-medium">${team.stage2BestScore.toFixed(2)}</div>`
-                    : `<div class="text-sm text-gray-400">No Score</div>`
-                }
-              </td>
-              <td class="px-6 py-4">
-                <div class="text-xs text-gray-600">${team.hasStage2Score ? team.bestAward : 'N/A'}</div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                ${
-                  team.hasAnyScore
-                    ? `<div class="text-lg font-bold text-green-600">${team.finalScore.toFixed(2)}</div>`
-                    : `<div class="text-sm text-gray-400">No Score</div>`
-                }
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                ${
-                  team.hasAnyScore
-                    ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Scored</span>`
-                    : `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Pending</span>`
-                }
-              </td>
-            </tr>
-          `,
+            <tr class="cursor-pointer ${team.hasAnyScore && index < 3 ? 'bg-amber-50/60' : ''}" onclick="router.navigate('/admin/teams/${team._id}')">
+              <td>${AdminPage.rank(index, team.hasAnyScore)}</td>
+              <td class="font-medium text-slate-900">${UI.escape(team.name)}</td>
+              <td class="text-slate-600">${UI.escape(team.challenge)}</td>
+              <td>${team.hasStage1Score ? `<span class="font-medium text-blue-600">${team.stage1Score.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+              <td>${team.hasStage2Score ? `<span class="font-medium text-purple-600">${team.stage2BestScore.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+              <td class="text-xs text-slate-600">${team.hasStage2Score ? UI.escape(team.bestAward) : 'N/A'}</td>
+              <td>${team.hasAnyScore ? `<span class="text-base font-bold text-emerald-600">${team.finalScore.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+              <td>${AdminPage.statusBadge(team.hasAnyScore)}</td>
+            </tr>`,
             )
             .join('')}
         </tbody>

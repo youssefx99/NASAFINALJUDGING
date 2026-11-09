@@ -18,6 +18,8 @@ class Router {
   navigate(path, pushState = true) {
     if (pushState) {
       history.pushState({ path }, '', path);
+    } else {
+      history.replaceState({ path }, '', path);
     }
     this.currentRoute = path;
     this.render();
@@ -60,13 +62,14 @@ class Router {
     // Check authentication for protected routes
     const protectedAdminRoutes = [
       '/admin',
-      '/admin/upload-data',
+      '/admin/upload-data-stream',
       '/admin/judges',
       '/admin/teams',
       '/admin/panels',
       '/admin/stage1',
       '/admin/stage2',
       '/admin/stage2-qualify',
+      '/winners',
     ];
     
     // Check for dynamic routes

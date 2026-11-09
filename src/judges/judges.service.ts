@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { User, UserDocument } from '../schemas/user.schema';
 import { Panel, PanelDocument } from '../schemas/panel.schema';
 import { Team, TeamDocument } from '../schemas/team.schema';
+import { Score, ScoreDocument } from '../schemas/score.schema';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -12,61 +13,58 @@ export class JudgesService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Panel.name) private panelModel: Model<PanelDocument>,
     @InjectModel(Team.name) private teamModel: Model<TeamDocument>,
+    @InjectModel(Score.name) private scoreModel: Model<ScoreDocument>,
   ) {}
 
   async getAssignedTeams(judgeId: string) {
-    // Find the judge
-    const judge = await this.userModel.findById(judgeId).exec();
+    const [judge, assignedPanels, scores] = await Promise.all([
+      this.userModel.findById(judgeId, { role: 1 }).lean().exec(),
+      this.panelModel
+        .find({ judges: judgeId }, { stage: 1, teams: 1, awardType: 1 })
+        .lean()
+        .exec(),
+      this.scoreModel
+        .find({ judge: judgeId }, { team: 1, stage: 1 })
+        .lean()
+        .exec(),
+    ]);
     if (!judge || judge.role !== 'judge') {
       throw new Error('Judge not found');
     }
 
-    // Get panels assigned to this judge and populate teams
-    const assignedPanels = await this.panelModel
-      .find({
-        judges: judgeId,
-      })
-      .populate('teams')
-      .exec();
-
     // Separate panels by stage
-    const stage1Teams: any[] = [];
-    const stage2Teams: any[] = [];
+    const stage1TeamIds: any[] = [];
+    const stage2TeamIds: any[] = [];
     let stage2AwardType: string | undefined;
 
     for (const panel of assignedPanels) {
-      // Handle both number and ObjectId stage values
-      const stageValue = panel.stage as any;
-      if (stageValue === 1) {
-        stage1Teams.push(...(panel.teams || []));
-      } else if (stageValue === 2) {
-        stage2Teams.push(...(panel.teams || []));
+      if (panel.stage === 1) {
+        stage1TeamIds.push(...(panel.teams || []));
+      } else if (panel.stage === 2) {
+        stage2TeamIds.push(...(panel.teams || []));
         stage2AwardType = panel.awardType; // Added: Get award type for Stage 2
       }
     }
 
-    // Get full team details if teams are not already populated
-    const stage1TeamIds = stage1Teams.map((team: any) =>
-      typeof team === 'object' ? team._id : team,
-    );
-    const stage2TeamIds = stage2Teams.map((team: any) =>
-      typeof team === 'object' ? team._id : team,
-    );
-
-    const stage1TeamsDetails =
+    const [stage1TeamsDetails, stage2TeamsDetails] = await Promise.all([
       stage1TeamIds.length > 0
-        ? await this.teamModel.find({ _id: { $in: stage1TeamIds } }).exec()
-        : [];
-
-    const stage2TeamsDetails =
+        ? this.teamModel.find({ _id: { $in: stage1TeamIds } }).lean().exec()
+        : [],
       stage2TeamIds.length > 0
-        ? await this.teamModel.find({ _id: { $in: stage2TeamIds } }).exec()
-        : [];
+        ? this.teamModel.find({ _id: { $in: stage2TeamIds } }).lean().exec()
+        : [],
+    ]);
 
     return {
       stage1Teams: stage1TeamsDetails,
       stage2Teams: stage2TeamsDetails,
       stage2AwardType: stage2AwardType, // Added: Return award type
+      stage1ScoredTeamIds: scores
+        .filter((score) => score.stage === 1)
+        .map((score) => String(score.team)),
+      stage2ScoredTeamIds: scores
+        .filter((score) => score.stage === 2)
+        .map((score) => String(score.team)),
     };
   }
 
@@ -135,12 +133,11 @@ export class JudgesService {
         // Generate password: counter + first name (starting from 1)
         const firstName = name.split(' ')[0]; // Get first name
         const password = `${i}${firstName}`; // Counter starts from 1 (i is 1-based for data rows)
-        const passwordHash = await bcrypt.hash(password, 10);
 
         const judge = {
           name: name,
           email: finalEmail,
-          passwordHash: passwordHash,
+          password: password,
           role: 'judge',
           panelAssignments: [],
         };
@@ -155,30 +152,51 @@ export class JudgesService {
       throw new Error(`CSV processing failed: ${errors.join('; ')}`);
     }
 
-    // Save judges to database
-    const savedJudges: UserDocument[] = [];
-    for (const judgeData of judges) {
-      try {
-        // Check if judge already exists
-        const existingJudge = await this.userModel
-          .findOne({ email: judgeData.email })
-          .exec();
-        if (existingJudge) {
-          errors.push(`Judge with email ${judgeData.email} already exists`);
-          continue;
-        }
+    // Save judges to database (skip emails that already exist)
+    const existingEmails = new Set(
+      (
+        await this.userModel
+          .find({ email: { $in: judges.map((judge) => judge.email) } }, { email: 1 })
+          .lean()
+          .exec()
+      ).map((user) => user.email),
+    );
+    const newJudges = judges.filter((judge) => {
+      if (existingEmails.has(judge.email)) {
+        errors.push(`Judge with email ${judge.email} already exists`);
+        return false;
+      }
+      return true;
+    });
+    const judgesToInsert = await Promise.all(
+      newJudges.map(async ({ password, ...judge }) => ({
+        ...judge,
+        passwordHash: await bcrypt.hash(password, 10),
+      })),
+    );
 
-        const newJudge = new this.userModel(judgeData);
-        const savedJudge = await newJudge.save();
-        savedJudges.push(savedJudge);
-      } catch (error: any) {
-        errors.push(`Failed to save judge ${judgeData.name}: ${error.message}`);
+    let savedJudges: UserDocument[] = [];
+    try {
+      savedJudges = await this.userModel.insertMany(judgesToInsert, {
+        ordered: false,
+      });
+    } catch (error: any) {
+      savedJudges = error.insertedDocs || [];
+      for (const writeError of error.writeErrors || [error]) {
+        errors.push(
+          `Failed to save judge ${judgesToInsert[writeError.index]?.name ?? ''}: ${writeError.errmsg || writeError.message}`,
+        );
       }
     }
 
     return {
       count: savedJudges.length,
-      judges: savedJudges,
+      judges: savedJudges.map((judge) => ({
+        _id: judge._id,
+        name: judge.name,
+        email: judge.email,
+        role: judge.role,
+      })),
       errors: errors,
     };
   }

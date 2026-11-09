@@ -1,290 +1,254 @@
 // Judge Detail Page
 class JudgeDetailPage {
-    static render() {
+  static stages = [];
+
+  static render() {
+    return Layout.admin({
+      title: '<span id="judgeName">Judge details</span>',
+      subtitle: '<span id="judgeSubtitle">Loading...</span>',
+      actions: `
+        <a href="/admin/judges" onclick="navigateToPage(event, '/admin/judges')" class="btn btn-secondary">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+          Back to Judges
+        </a>
+      `,
+      content: `<div id="judgeContent">${JudgeDetailPage.skeletonHtml()}</div>`,
+    });
+  }
+
+  static afterRender() {
+    JudgeDetailPage.stages = [];
+    JudgeDetailPage.load(window.location.pathname.split('/').pop());
+  }
+
+  static skeletonHtml() {
+    return `
+      <div class="space-y-6">
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          ${'<div class="stat-card"><div class="skeleton h-11 w-11"></div><div class="flex-1 space-y-2"><div class="skeleton h-3 w-20"></div><div class="skeleton h-6 w-12"></div></div></div>'.repeat(4)}
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="skeleton h-5 w-48"></div></div>
+          <div class="overflow-x-auto"><table class="table"><tbody>${UI.skeletonRows(5, 6)}</tbody></table></div>
+        </div>
+      </div>
+    `;
+  }
+
+  static async load(judgeId) {
+    const content = document.getElementById('judgeContent');
+    if (!content) return;
+    content.innerHTML = JudgeDetailPage.skeletonHtml();
+
+    try {
+      const id = encodeURIComponent(judgeId);
+      const [judge, panels, scores] = await Promise.all([
+        UI.api(`/api/users/${id}`),
+        UI.api('/api/panels'),
+        UI.api(`/api/scores/judge/${id}`),
+      ]);
+      if (!document.getElementById('judgeContent')) return;
+
+      const scoreByStageTeam = new Map(scores.map((s) => [`${s.stage}:${s.team?._id || s.team}`, s]));
+      const myPanels = panels.filter((p) => (p.judges || []).some((j) => j && (j._id || j) === judge._id));
+
+      JudgeDetailPage.stages = [1, 2]
+        .map((stage) => {
+          const stagePanels = myPanels.filter((p) => Number(p.stage) === stage);
+          const rows = stagePanels.flatMap((panel) =>
+            (panel.teams || []).filter(Boolean).map((t) => {
+              const teamId = t._id || t;
+              const score = scoreByStageTeam.get(`${stage}:${teamId}`) || null;
+              return { teamId, teamName: t.name || score?.team?.name || 'Unknown team', challenge: t.challenge || '', panel, score };
+            }),
+          );
+          return { stage, panels: stagePanels, rows, scored: rows.filter((r) => r.score).length };
+        })
+        .filter((s) => s.panels.length);
+
+      document.getElementById('judgeName').textContent = judge.name;
+      document.getElementById('judgeSubtitle').textContent = judge.email || '';
+      JudgeDetailPage.renderJudge(judge, scores);
+    } catch (error) {
+      console.error('Failed to load judge details:', error);
+      if (!document.getElementById('judgeContent')) return;
+      document.getElementById('judgeName').textContent = 'Judge details';
+      document.getElementById('judgeSubtitle').textContent = '';
+      content.innerHTML = `
+        <div class="card flex flex-col items-center px-6 py-12 text-center">
+          <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-500">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          </div>
+          <p class="text-sm font-medium text-slate-900">Couldn't load this judge</p>
+          <p class="mt-1 text-sm text-slate-500">${UI.escape(error.message)}</p>
+          <div class="mt-4 flex gap-3">
+            <button onclick="JudgeDetailPage.afterRender()" class="btn btn-secondary">Try again</button>
+            <a href="/admin/judges" onclick="navigateToPage(event, '/admin/judges')" class="btn btn-primary">Back to Judges</a>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  static renderJudge(judge, scores) {
+    const stages = JudgeDetailPage.stages;
+    const assigned = stages.reduce((sum, s) => sum + s.rows.length, 0);
+    const scored = stages.reduce((sum, s) => sum + s.scored, 0);
+    const completion = assigned ? Math.round((scored / assigned) * 100) : 0;
+
+    const stats = [
+      ['Assigned teams', assigned, 'teams', 'bg-blue-50 text-blue-600'],
+      ['Scored', scored, 'criteria', 'bg-emerald-50 text-emerald-600'],
+      ['Pending', assigned - scored, 'rocket', 'bg-amber-50 text-amber-600'],
+      ['Scores submitted', scores.length, 'trophy', 'bg-purple-50 text-purple-600'],
+    ];
+
+    const panelBadges = stages.flatMap((s) =>
+      s.panels.map((p) =>
+        s.stage === 1
+          ? `<span class="badge badge-blue">S1 · ${UI.escape(p.name)}</span>`
+          : `<span class="badge badge-purple">S2 · ${UI.escape(p.awardType || p.name)}</span>`,
+      ),
+    );
+
+    document.getElementById('judgeContent').innerHTML = `
+      <div class="space-y-6">
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          ${stats
+            .map(
+              ([label, value, icon, color]) => `
+              <div class="stat-card">
+                <div class="stat-icon ${color}">${Sidebar.icon(icon)}</div>
+                <div class="min-w-0">
+                  <p class="stat-label truncate">${label}</p>
+                  <p class="stat-value">${value}</p>
+                </div>
+              </div>`,
+            )
+            .join('')}
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Judge information</h2>
+            <span class="badge badge-gray capitalize">${UI.escape(judge.role || 'judge')}</span>
+          </div>
+          <div class="card-body grid grid-cols-1 gap-5 md:grid-cols-3">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Name</p>
+              <p class="mt-1 text-sm font-medium text-slate-900">${UI.escape(judge.name)}</p>
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</p>
+              <a href="mailto:${UI.escape(judge.email)}" class="mt-1 block truncate text-sm text-blue-600 hover:underline">${UI.escape(judge.email)}</a>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Overall progress</p>
+              <div class="mt-2 flex items-center gap-3">
+                <div class="progress flex-1"><div class="progress-bar" style="width: ${completion}%"></div></div>
+                <span class="text-sm font-medium text-slate-700">${completion}%</span>
+              </div>
+            </div>
+            <div class="md:col-span-3">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Panels</p>
+              <div class="flex flex-wrap gap-1">
+                ${panelBadges.length ? panelBadges.join('') : '<span class="badge badge-yellow">No panel assignments</span>'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Scoring tracking</h2>
+            ${stages.length
+              ? `<select id="statusFilter" onchange="JudgeDetailPage.renderTracking()" class="input w-auto" aria-label="Filter by status">
+                  <option value="">All teams</option>
+                  <option value="pending">Pending only</option>
+                  <option value="scored">Scored only</option>
+                </select>`
+              : ''}
+          </div>
+          <div id="detailedScoring"></div>
+        </div>
+      </div>
+    `;
+
+    JudgeDetailPage.renderTracking();
+  }
+
+  static renderTracking() {
+    const container = document.getElementById('detailedScoring');
+    if (!container) return;
+    const stages = JudgeDetailPage.stages;
+
+    if (!stages.length) {
+      container.innerHTML = UI.emptyState('No panel assignments', 'Assign this judge to panels from the Judges or Panels page.');
+      return;
+    }
+
+    const filter = document.getElementById('statusFilter')?.value || '';
+    container.innerHTML = stages
+      .map(({ stage, panels, rows, scored }) => {
+        const visible = rows.filter((r) => !filter || (filter === 'scored') === !!r.score);
+        const percent = rows.length ? Math.round((scored / rows.length) * 100) : 0;
+        const isStage2 = stage === 2;
         return `
-            <div class="min-h-screen bg-gray-50 flex">
-                ${Sidebar.render()}
-                
-                <div class="flex-1 ml-64">
-                    <div class="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-                        <div class="flex justify-between items-center">
-                            <div class="flex items-center space-x-4">
-                                <button onclick="router.navigate('/admin/judges')" class="text-gray-600 hover:text-gray-900">
-                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                                    </svg>
-                                </button>
-                                <h1 id="judgeName" class="text-2xl font-bold text-gray-900">Loading...</h1>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="p-6">
-                        <div id="judgeContent">
-                            <div class="text-center py-12">
-                                <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                                <p class="mt-4 text-gray-600">Loading judge details...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+          <section class="border-b border-slate-200 last:border-b-0">
+            <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <div>
+                <h3 class="text-sm font-semibold ${isStage2 ? 'text-purple-700' : 'text-blue-700'}">Stage ${stage} teams</h3>
+                <p class="text-xs text-slate-500">${panels.length} panel${panels.length === 1 ? '' : 's'} · ${scored} of ${rows.length} scored</p>
+              </div>
+              <div class="flex w-full items-center gap-3 sm:w-56">
+                <div class="progress flex-1"><div class="progress-bar ${isStage2 ? 'bg-purple-600' : ''}" style="width: ${percent}%"></div></div>
+                <span class="text-xs font-medium text-slate-600">${percent}%</span>
+              </div>
             </div>
+            ${visible.length
+              ? `<div class="overflow-x-auto">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Team</th>
+                        <th>Panel</th>
+                        ${isStage2 ? '<th>Award</th>' : ''}
+                        <th>Status</th>
+                        <th>Score</th>
+                        <th>Last updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>${visible.map((r) => JudgeDetailPage.rowHtml(r, isStage2)).join('')}</tbody>
+                  </table>
+                </div>`
+              : `<p class="px-5 pb-5 text-sm text-slate-500">No ${filter} teams in this stage.</p>`}
+          </section>
         `;
-    }
+      })
+      .join('');
+  }
 
-    static afterRender() {
-        const pathParts = window.location.pathname.split('/');
-        const judgeId = pathParts[pathParts.length - 1];
-        JudgeDetailPage.loadJudgeDetails(judgeId);
-    }
-
-    static async loadJudgeDetails(judgeId) {
-        try {
-            // Load judge data
-            const judgeResponse = await fetch(`/api/users/${judgeId}`, {
-                headers: { 'Authorization': `Bearer ${authService.token}` }
-            });
-
-            if (!judgeResponse.ok) {
-                throw new Error('Judge not found');
-            }
-
-            const judge = await judgeResponse.json();
-            
-            // Load all panels to find assignments
-            const panelsResponse = await fetch('/api/panels', {
-                headers: { 'Authorization': `Bearer ${authService.token}` }
-            });
-            
-            let stage1Panels = [];
-            let stage2Panels = [];
-            
-            if (panelsResponse.ok) {
-                const panels = await panelsResponse.json();
-                stage1Panels = panels.filter(panel => 
-                    panel.stage === 1 && 
-                    panel.judges?.some(j => {
-                        const jId = typeof j === 'string' ? j : j._id;
-                        return jId === judgeId;
-                    })
-                );
-                stage2Panels = panels.filter(panel => 
-                    panel.stage === 2 && 
-                    panel.judges?.some(j => {
-                        const jId = typeof j === 'string' ? j : j._id;
-                        return jId === judgeId;
-                    })
-                );
-            }
-
-            // Load all scores by this judge
-            const scoresResponse = await fetch(`/api/scores/judge/${judgeId}`, {
-                headers: { 'Authorization': `Bearer ${authService.token}` }
-            });
-
-            let scores = [];
-            if (scoresResponse.ok) {
-                scores = await scoresResponse.json();
-            }
-
-            // Load all teams to get names for pending teams
-            const teamsResponse = await fetch('/api/teams', {
-                headers: { 'Authorization': `Bearer ${authService.token}` }
-            });
-
-            let allTeams = [];
-            if (teamsResponse.ok) {
-                allTeams = await teamsResponse.json();
-            }
-
-            // Update page title
-            document.getElementById('judgeName').textContent = judge.name;
-
-            // Render judge details
-            JudgeDetailPage.renderJudgeDetails(judge, stage1Panels, stage2Panels, scores, allTeams);
-
-        } catch (error) {
-            console.error('Failed to load judge details:', error);
-            document.getElementById('judgeContent').innerHTML = `
-                <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-                    <svg class="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                    </svg>
-                    <h3 class="text-lg font-medium text-red-900 mb-2">Failed to Load Judge</h3>
-                    <p class="text-red-700">${error.message}</p>
-                    <button onclick="router.navigate('/admin/judges')" class="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-                        Back to Judges
-                    </button>
-                </div>
-            `;
-        }
-    }
-
-    static renderJudgeDetails(judge, stage1Panels, stage2Panels, scores, allTeams) {
-        // Separate scores by stage
-        const stage1Scores = scores.filter(s => s.stage === 1);
-        const stage2Scores = scores.filter(s => s.stage === 2);
-
-        // Get all teams from panels
-        const stage1Teams = stage1Panels.flatMap(p => p.teams || []);
-        const stage2Teams = stage2Panels.flatMap(p => p.teams || []);
-
-        // Find scored and unscored teams
-        const stage1ScoredTeamIds = stage1Scores.map(s => {
-            const teamId = typeof s.team === 'string' ? s.team : s.team?._id;
-            return teamId;
-        });
-        const stage2ScoredTeamIds = stage2Scores.map(s => {
-            const teamId = typeof s.team === 'string' ? s.team : s.team?._id;
-            return teamId;
-        });
-
-        document.getElementById('judgeContent').innerHTML = `
-            <div class="space-y-6">
-                <!-- Judge Info Card -->
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-xl font-bold text-gray-900 mb-4">Judge Information</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="text-sm font-medium text-gray-500">Name</label>
-                            <p class="text-gray-900 font-medium">${judge.name}</p>
-                        </div>
-                        <div>
-                            <label class="text-sm font-medium text-gray-500">Email</label>
-                            <p class="text-gray-900">${judge.email}</p>
-                        </div>
-                        <div>
-                            <label class="text-sm font-medium text-gray-500">Role</label>
-                            <p class="text-gray-900 capitalize">${judge.role}</p>
-                        </div>
-                        <div>
-                            <label class="text-sm font-medium text-gray-500">Total Scores Submitted</label>
-                            <p class="text-gray-900 font-bold text-2xl">${scores.length}</p>
-                        </div>
-                    </div>
-                </div>
-
-
-                <!-- Detailed Scoring Tracking -->
-                <div class="bg-white rounded-lg shadow overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
-                        <h2 class="text-lg font-bold text-gray-900">Detailed Scoring Tracking</h2>
-                    </div>
-                    <div class="p-6">
-                        <div id="detailedScoring">
-                            ${JudgeDetailPage.renderDetailedScoring(stage1Panels, stage2Panels, scores, judge._id, allTeams)}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    static renderDetailedScoring(stage1Panels, stage2Panels, scores, judgeId, allTeams) {
-        let html = '';
-
-        // Stage 1 Detailed Tracking
-        if (stage1Panels.length > 0) {
-            html += `<div class="mb-8">
-                <h3 class="text-md font-bold text-blue-900 mb-4">Stage 1 Teams</h3>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-blue-50">
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team Name</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Panel</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">`;
-
-            for (const panel of stage1Panels) {
-                for (const teamId of (panel.teams || [])) {
-                    const score = scores.find(s => {
-                        const sTeamId = typeof s.team === 'string' ? s.team : s.team?._id;
-                        return sTeamId === teamId && s.stage === 1;
-                    });
-                    const team = allTeams.find(t => t._id === teamId);
-                    const teamName = score?.team?.name || team?.name || 'Unknown Team';
-                    const isScored = !!score;
-                    const scoreValue = score?.totalScore || 0;
-                    const scoreDate = score?.createdAt ? new Date(score.createdAt).toLocaleDateString() : '-';
-
-                    html += `<tr class="${isScored ? 'bg-green-50' : 'bg-yellow-50'}">
-                        <td class="px-4 py-3 text-sm text-gray-900">${teamName}</td>
-                        <td class="px-4 py-3 text-sm text-gray-600">${panel.name}</td>
-                        <td class="px-4 py-3 text-sm">
-                            ${isScored ? 
-                                '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">✓ Scored</span>' : 
-                                '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">⏳ Pending</span>'}
-                        </td>
-                        <td class="px-4 py-3 text-sm font-bold ${isScored ? 'text-blue-600' : 'text-gray-400'}">
-                            ${isScored ? scoreValue.toFixed(2) : '-'}
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500">${scoreDate}</td>
-                    </tr>`;
-                }
-            }
-
-            html += `</tbody></table></div></div>`;
-        }
-
-        // Stage 2 Detailed Tracking
-        if (stage2Panels.length > 0) {
-            html += `<div>
-                <h3 class="text-md font-bold text-purple-900 mb-4">Stage 2 Teams</h3>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-purple-50">
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team Name</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Panel</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Award Type</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">`;
-
-            for (const panel of stage2Panels) {
-                for (const teamId of (panel.teams || [])) {
-                    const score = scores.find(s => {
-                        const sTeamId = typeof s.team === 'string' ? s.team : s.team?._id;
-                        return sTeamId === teamId && s.stage === 2;
-                    });
-                    const team = allTeams.find(t => t._id === teamId);
-                    const teamName = score?.team?.name || team?.name || 'Unknown Team';
-                    const isScored = !!score;
-                    const scoreValue = score?.totalScore || 0;
-                    const scoreDate = score?.createdAt ? new Date(score.createdAt).toLocaleDateString() : '-';
-
-                    html += `<tr class="${isScored ? 'bg-green-50' : 'bg-yellow-50'}">
-                        <td class="px-4 py-3 text-sm text-gray-900">${teamName}</td>
-                        <td class="px-4 py-3 text-sm text-gray-600">${panel.name}</td>
-                        <td class="px-4 py-3 text-xs text-purple-600">${panel.awardType || 'N/A'}</td>
-                        <td class="px-4 py-3 text-sm">
-                            ${isScored ? 
-                                '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">✓ Scored</span>' : 
-                                '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">⏳ Pending</span>'}
-                        </td>
-                        <td class="px-4 py-3 text-sm font-bold ${isScored ? 'text-purple-600' : 'text-gray-400'}">
-                            ${isScored ? scoreValue.toFixed(2) : '-'}
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500">${scoreDate}</td>
-                    </tr>`;
-                }
-            }
-
-            html += `</tbody></table></div></div>`;
-        }
-
-        if (stage1Panels.length === 0 && stage2Panels.length === 0) {
-            html = '<p class="text-gray-500 text-center py-8">No panel assignments found</p>';
-        }
-
-        return html;
-    }
+  static rowHtml({ teamId, teamName, challenge, panel, score }, isStage2) {
+    const href = `/admin/teams/${teamId}`;
+    const date = score ? new Date(score.updatedAt || score.createdAt).toLocaleDateString() : '';
+    return `
+      <tr>
+        <td>
+          <div class="min-w-[11rem]">
+            <a href="${href}" onclick="navigateToPage(event, '${href}')" class="font-medium text-slate-900 hover:text-blue-600">${UI.escape(teamName)}</a>
+            ${challenge ? `<p class="mt-0.5 text-xs text-slate-500">${UI.escape(challenge)}</p>` : ''}
+          </div>
+        </td>
+        <td class="whitespace-nowrap">${UI.escape(panel.name)}</td>
+        ${isStage2 ? `<td><span class="badge badge-purple">${UI.escape(panel.awardType || 'N/A')}</span></td>` : ''}
+        <td>${score ? '<span class="badge badge-green">Scored</span>' : '<span class="badge badge-yellow">Pending</span>'}</td>
+        <td>
+          ${score
+            ? `<span class="font-semibold ${isStage2 ? 'text-purple-600' : 'text-blue-600'}">${Number(score.totalScore || 0).toFixed(2)}</span>`
+            : '<span class="text-slate-400">—</span>'}
+        </td>
+        <td class="whitespace-nowrap"><span class="text-slate-500">${date || '—'}</span></td>
+      </tr>
+    `;
+  }
 }

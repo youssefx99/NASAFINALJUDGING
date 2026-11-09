@@ -53,8 +53,56 @@ export class WinnersService {
       'Local Impact',
     ];
 
-    // Get all teams with Stage 1 and Stage 2 scores
-    const allTeams = await this.teamModel.find().exec();
+    const [stage1Averages, awardAverages] = await Promise.all([
+      this.scoreModel
+        .aggregate([
+          { $match: { stage: 1 } },
+          { $group: { _id: '$team', averageScore: { $avg: '$totalScore' } } },
+        ])
+        .exec(),
+      // Stage 2 per-award averages, in the order each award was first scored (tie-break for the best award)
+      this.scoreModel
+        .aggregate([
+          { $match: { stage: 2, awardType: { $nin: [null, ''] } } },
+          {
+            $group: {
+              _id: { team: '$team', awardType: '$awardType' },
+              averageScore: { $avg: '$totalScore' },
+              judgeCount: { $sum: 1 },
+              firstScore: { $min: '$_id' },
+            },
+          },
+          { $sort: { firstScore: 1 } },
+        ])
+        .exec(),
+    ]);
+
+    const stage1ByTeam = new Map(
+      stage1Averages.map((s) => [String(s._id), s.averageScore as number]),
+    );
+
+    // Find best Stage 2 award for each team (awards require Stage 2 scores)
+    const bestAwardByTeam = new Map<
+      string,
+      { award: string; average: number; judgeCount: number }
+    >();
+    for (const record of awardAverages) {
+      const teamId = String(record._id.team);
+      const best = bestAwardByTeam.get(teamId);
+      if (record.averageScore > (best?.average || 0)) {
+        bestAwardByTeam.set(teamId, {
+          award: record._id.awardType,
+          average: record.averageScore,
+          judgeCount: record.judgeCount,
+        });
+      }
+    }
+
+    const teams = await this.teamModel
+      .find({ _id: { $in: [...bestAwardByTeam.keys()] } })
+      .lean()
+      .exec();
+
     const teamFinalScores: Array<{
       team: any;
       stage1Score: number;
@@ -62,66 +110,20 @@ export class WinnersService {
       stage2BestAward: string;
       finalScore: number;
       judgeCount: number;
-    }> = [];
-
-    // Calculate final score for each team
-    for (const team of allTeams) {
-      // Get Stage 1 average
-      const stage1Scores = await this.scoreModel
-        .find({ team: team._id, stage: 1 })
-        .exec();
-
-      const stage1Avg = stage1Scores.length > 0
-        ? stage1Scores.reduce((sum, s) => sum + s.totalScore, 0) / stage1Scores.length
-        : 0;
-
-      // Get all Stage 2 scores grouped by award type
-      const stage2Scores = await this.scoreModel
-        .find({ team: team._id, stage: 2 })
-        .exec();
-
-      // IMPORTANT: Only skip if no Stage 2 scores (awards require Stage 2)
-      if (stage2Scores.length === 0) continue;
-
-      // Find best Stage 2 award for this team
-      const awardAverages = new Map<string, { scores: number[]; count: number }>();
-      
-      stage2Scores.forEach((score) => {
-        if (!score.awardType) return;
-        if (!awardAverages.has(score.awardType)) {
-          awardAverages.set(score.awardType, { scores: [], count: 0 });
-        }
-        awardAverages.get(score.awardType).scores.push(score.totalScore);
-        awardAverages.get(score.awardType).count++;
-      });
-
-      let bestAward = '';
-      let bestAwardAvg = 0;
-      let bestAwardJudgeCount = 0;
-
-      awardAverages.forEach((data, awardType) => {
-        const avg = data.scores.reduce((sum, s) => sum + s, 0) / data.scores.length;
-        if (avg > bestAwardAvg) {
-          bestAwardAvg = avg;
-          bestAward = awardType;
-          bestAwardJudgeCount = data.count;
-        }
-      });
-
+    }> = teams.map((team) => {
+      const best = bestAwardByTeam.get(String(team._id))!;
       // Calculate final score (60% Stage 1 + 40% Stage 2 best)
-      const stage1Percent = (stage1Avg / 5) * 100;
-      const stage2Percent = (bestAwardAvg / 5) * 100;
-      const finalScore = stage1Percent * 0.6 + stage2Percent * 0.4;
-
-      teamFinalScores.push({
+      const stage1Percent = ((stage1ByTeam.get(String(team._id)) || 0) / 5) * 100;
+      const stage2Percent = (best.average / 5) * 100;
+      return {
         team,
         stage1Score: stage1Percent,
         stage2BestScore: stage2Percent,
-        stage2BestAward: bestAward,
-        finalScore,
-        judgeCount: bestAwardJudgeCount,
-      });
-    }
+        stage2BestAward: best.award,
+        finalScore: stage1Percent * 0.6 + stage2Percent * 0.4,
+        judgeCount: best.judgeCount,
+      };
+    });
 
     // Sort by final score (highest first)
     teamFinalScores.sort((a, b) => b.finalScore - a.finalScore);
@@ -220,6 +222,7 @@ export class WinnersService {
         team: teamId,
       })
       .populate('judge', 'name email')
+      .lean()
       .exec();
 
     return scores.map((score) => ({
@@ -293,10 +296,14 @@ export class WinnersService {
 
     // Populate team details
     const teamIds = rankedTeams.map((t) => t._id);
-    const teams = await this.teamModel.find({ _id: { $in: teamIds } }).exec();
+    const teams = await this.teamModel
+      .find({ _id: { $in: teamIds } })
+      .lean()
+      .exec();
+    const teamsById = new Map(teams.map((t) => [t._id.toString(), t]));
 
     return rankedTeams.map((rank) => {
-      const team = teams.find((t) => t._id.toString() === rank._id.toString());
+      const team = teamsById.get(rank._id.toString());
       return {
         ...rank,
         team: team

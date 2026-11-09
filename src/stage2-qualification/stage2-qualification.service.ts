@@ -4,7 +4,6 @@ import { Model } from 'mongoose';
 import { Panel } from '../schemas/panel.schema';
 import { Score } from '../schemas/score.schema';
 import { Team } from '../schemas/team.schema';
-import { User } from '../schemas/user.schema';
 
 @Injectable()
 export class Stage2QualificationService {
@@ -12,53 +11,41 @@ export class Stage2QualificationService {
     @InjectModel(Panel.name) private panelModel: Model<Panel>,
     @InjectModel(Score.name) private scoreModel: Model<Score>,
     @InjectModel(Team.name) private teamModel: Model<Team>,
-    @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
   async getQualificationStats() {
-    // Get all Stage 1 panels
-    const stage1Panels = await this.panelModel
-      .find({ stage: 1 })
-      .populate('judges')
-      .populate('teams')
-      .exec();
+    const [stage1Panels, judgesByTeam, incompleteJudgesData, topTeamsPreview] =
+      await Promise.all([
+        this.panelModel.find({ stage: 1 }, { judges: 1, teams: 1 }).lean().exec(),
+        this.scoreModel
+          .aggregate([
+            { $match: { stage: 1 } },
+            { $group: { _id: '$team', judges: { $addToSet: '$judge' } } },
+          ])
+          .exec(),
+        this.getIncompleteJudges(),
+        this.getTopTeamsForQualification(60),
+      ]);
+
+    const scoredBy = new Map(
+      judgesByTeam.map((group) => [
+        String(group._id),
+        new Set(group.judges.map(String)),
+      ]),
+    );
 
     let incompleteTeamsCount = 0;
     let readyTeamsCount = 0;
-    const allStage1Teams = new Set<string>();
-    const processedTeams = new Set<string>(); // Track already processed teams
+    const processedTeams = new Set<string>(); // Team in multiple panels is checked against its first panel
 
-    // Check each team in each panel
     for (const panel of stage1Panels) {
-      const judgeIds = (panel.judges as any[]).map((j) =>
-        typeof j === 'string' ? j : j._id.toString(),
-      );
-      const teamIds = (panel.teams as any[]).map((t) =>
-        typeof t === 'string' ? t : t._id.toString(),
-      );
-
-      for (const teamId of teamIds) {
-        allStage1Teams.add(teamId);
-
-        // Skip if already processed (team in multiple panels)
-        if (processedTeams.has(teamId)) {
-          continue;
-        }
+      for (const teamId of panel.teams.map(String)) {
+        if (processedTeams.has(teamId)) continue;
         processedTeams.add(teamId);
 
-        // Get all scores for this team in Stage 1
-        const scores = await this.scoreModel
-          .find({ team: teamId, stage: 1 })
-          .exec();
-
-        const scoredByJudges = scores.map((s) => s.judge.toString());
-
         // Check if ALL judges in the panel scored this team
-        const allJudgesScored = judgeIds.every((judgeId) =>
-          scoredByJudges.includes(judgeId),
-        );
-
-        if (allJudgesScored) {
+        const scoredByJudges = scoredBy.get(teamId);
+        if (panel.judges.every((judgeId) => scoredByJudges?.has(String(judgeId)))) {
           readyTeamsCount++;
         } else {
           incompleteTeamsCount++;
@@ -66,51 +53,53 @@ export class Stage2QualificationService {
       }
     }
 
-    // Get incomplete judges
-    const incompleteJudgesData = await this.getIncompleteJudges();
-
-    // Get top teams preview (default 60, show first 10)
-    const topTeamsPreview = await this.getTopTeamsForQualification(60);
-
     return {
       incompleteTeams: incompleteTeamsCount,
       incompleteJudges: incompleteJudgesData.pagination.totalItems,
       readyTeams: readyTeamsCount,
-      totalStage1Teams: allStage1Teams.size,
+      totalStage1Teams: processedTeams.size,
       topTeamsPreview: topTeamsPreview.slice(0, 10), // Show first 10 as preview
     };
   }
 
   async getIncompleteJudges(page: number = 1, limit: number = 10) {
-    // Get all Stage 1 judges (users with role 'judge' assigned to Stage 1 panels)
-    const stage1Panels = await this.panelModel
-      .find({ stage: 1 })
-      .populate('judges')
-      .populate('teams')
-      .exec();
+    const [stage1Panels, teamsByJudge] = await Promise.all([
+      this.panelModel
+        .find({ stage: 1 }, { judges: 1, teams: 1 })
+        .populate('judges', 'name')
+        .lean()
+        .exec(),
+      this.scoreModel
+        .aggregate([
+          { $match: { stage: 1 } },
+          { $group: { _id: '$judge', teams: { $push: '$team' } } },
+        ])
+        .exec(),
+    ]);
 
+    const scoredTeamsByJudge = new Map(
+      teamsByJudge.map((group) => [
+        String(group._id),
+        group.teams.map(String) as string[],
+      ]),
+    );
+
+    // Build map of judges and their assigned teams (across all their Stage 1 panels)
     const judgeMap = new Map<
       string,
-      { judge: any; assignedTeams: Set<string> }
+      { judgeName: string; assignedTeams: Set<string> }
     >();
-
-    // Build map of judges and their assigned teams
     for (const panel of stage1Panels) {
-      const judges = panel.judges as any[];
-      const teams = panel.teams as any[];
-
-      for (const judge of judges) {
-        const judgeId =
-          typeof judge === 'string' ? judge : judge._id.toString();
+      for (const judge of panel.judges as any[]) {
+        const judgeId = String(judge._id);
         if (!judgeMap.has(judgeId)) {
           judgeMap.set(judgeId, {
-            judge: judge,
+            judgeName: judge.name || 'Unknown',
             assignedTeams: new Set(),
           });
         }
-        for (const team of teams) {
-          const teamId = typeof team === 'string' ? team : team._id.toString();
-          judgeMap.get(judgeId)?.assignedTeams.add(teamId);
+        for (const teamId of panel.teams) {
+          judgeMap.get(judgeId)!.assignedTeams.add(String(teamId));
         }
       }
     }
@@ -123,30 +112,20 @@ export class Stage2QualificationService {
       pendingTeams: number;
     }> = [];
 
-    // Check each judge's completion status
     for (const [judgeId, data] of judgeMap.entries()) {
-      const assignedTeamIds = Array.from(data.assignedTeams);
-      const scores = await this.scoreModel
-        .find({ judge: judgeId, stage: 1 })
-        .exec();
+      const scoredTeamIds = scoredTeamsByJudge.get(judgeId) || [];
+      const scored = new Set(scoredTeamIds);
+      const pendingTeams = [...data.assignedTeams].filter(
+        (teamId) => !scored.has(teamId),
+      ).length;
 
-      const scoredTeamIds = scores.map((s) => s.team.toString());
-      const pendingTeams = assignedTeamIds.filter(
-        (teamId) => !scoredTeamIds.includes(teamId),
-      );
-
-      if (pendingTeams.length > 0) {
-        const judgeData =
-          typeof data.judge === 'string'
-            ? await this.userModel.findById(data.judge).exec()
-            : data.judge;
-
+      if (pendingTeams > 0) {
         incompleteJudges.push({
-          judgeId: judgeId,
-          judgeName: judgeData?.name || 'Unknown',
-          assignedTeams: assignedTeamIds.length,
+          judgeId,
+          judgeName: data.judgeName,
+          assignedTeams: data.assignedTeams.size,
           scoredTeams: scoredTeamIds.length,
-          pendingTeams: pendingTeams.length,
+          pendingTeams,
         });
       }
     }
@@ -190,12 +169,14 @@ export class Stage2QualificationService {
 
     // Populate team details
     const teamIds = scores.map((s) => s._id);
-    const teams = await this.teamModel.find({ _id: { $in: teamIds } }).exec();
+    const teams = await this.teamModel
+      .find({ _id: { $in: teamIds } }, { name: 1, challenge: 1 })
+      .lean()
+      .exec();
+    const teamsById = new Map(teams.map((team) => [String(team._id), team]));
 
     return scores.map((score) => {
-      const team = teams.find(
-        (t) => (t as any)._id.toString() === score._id.toString(),
-      );
+      const team = teamsById.get(String(score._id));
       return {
         _id: score._id,
         name: team?.name || 'Unknown',

@@ -16,6 +16,7 @@ export class PanelsService {
       .find()
       .populate('judges', 'name email')
       .populate('teams', 'name challenge')
+      .lean()
       .exec();
   }
 
@@ -24,6 +25,7 @@ export class PanelsService {
       .findById(id)
       .populate('judges', 'name email')
       .populate('teams', 'name challenge')
+      .lean()
       .exec();
   }
 
@@ -89,6 +91,7 @@ export class PanelsService {
       .find({ stage })
       .populate('judges', 'name email')
       .populate('teams', 'name challenge')
+      .lean()
       .exec();
   }
 
@@ -97,16 +100,17 @@ export class PanelsService {
     stage: number,
     judgeIds: string[],
   ): Promise<void> {
-    for (const judgeId of judgeIds) {
-      await this.userModel.findByIdAndUpdate(judgeId, {
+    await this.userModel.updateMany(
+      { _id: { $in: judgeIds } },
+      {
         $addToSet: {
           panelAssignments: {
             stage: stage,
             panel: panelId,
           },
         },
-      });
-    }
+      },
+    );
   }
 
   private async removeJudgeAssignments(
@@ -114,18 +118,17 @@ export class PanelsService {
     stage: number,
     judgeIds: any[],
   ): Promise<void> {
-    const judgeIdStrings = judgeIds.map((id) => id.toString());
-
-    for (const judgeId of judgeIdStrings) {
-      await this.userModel.findByIdAndUpdate(judgeId, {
+    await this.userModel.updateMany(
+      { _id: { $in: judgeIds } },
+      {
         $pull: {
           panelAssignments: {
             stage: stage,
             panel: panelId,
           },
         },
-      });
-    }
+      },
+    );
   }
 
   async createStage2Panels() {
@@ -142,31 +145,23 @@ export class PanelsService {
       'Local Impact',
     ];
 
-    const createdPanels: any[] = [];
-
-    for (const awardType of awardTypes) {
-      // Check if panel already exists
-      const existingPanel = await this.panelModel.findOne({
-        stage: 2,
-        awardType: awardType,
-      });
-
-      if (!existingPanel) {
-        const panel = new this.panelModel({
+    const existingAwardTypes = await this.panelModel.distinct('awardType', {
+      stage: 2,
+    });
+    const createdPanels = await this.panelModel.insertMany(
+      awardTypes
+        .filter((awardType) => !existingAwardTypes.includes(awardType))
+        .map((awardType) => ({
           name: `Stage 2 - ${awardType}`,
           stage: 2,
           awardType: awardType,
           judges: [],
           teams: [],
-        });
-
-        const savedPanel = await panel.save();
-        createdPanels.push(savedPanel);
-        console.log(`Created panel: ${awardType}`);
-      } else {
-        console.log(`Panel already exists: ${awardType}`);
-      }
-    }
+        })),
+    );
+    createdPanels.forEach((panel) =>
+      console.log(`Created panel: ${panel.awardType}`),
+    );
 
     return {
       message: 'Stage 2 panels initialized',

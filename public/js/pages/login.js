@@ -2,85 +2,24 @@
 class LoginPage {
     static render() {
         return `
-            <style>
-                @keyframes fadeInUp {
-                    from {
-                        opacity: 0;
-                        transform: translateY(30px);
-                    }
-                    to {
-                        opacity: 1;
-                        transform: translateY(0);
-                    }
-                }
-                @keyframes fadeInLeft {
-                    from {
-                        opacity: 0;
-                        transform: translateX(-30px);
-                    }
-                    to {
-                        opacity: 1;
-                        transform: translateX(0);
-                    }
-                }
-                @keyframes float {
-                    0%, 100% { transform: translateY(0px); }
-                    50% { transform: translateY(-20px); }
-                }
-                .animate-fadeInUp {
-                    animation: fadeInUp 0.8s ease-out;
-                }
-                .animate-fadeInLeft {
-                    animation: fadeInLeft 0.8s ease-out;
-                }
-                .animate-float {
-                    animation: float 3s ease-in-out infinite;
-                }
-            </style>
-            <div class="min-h-screen flex items-center justify-center bg-gray-100 p-8">
-                <div class="flex w-full max-w-6xl h-[600px] bg-white rounded-3xl shadow-2xl overflow-hidden">
-                    <!-- Left Section - Welcome & Branding -->
-                    <div class="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-purple-400 via-purple-500 to-purple-600 relative overflow-hidden">
-                        <!-- Decorative Background Elements -->
-                        <div class="absolute inset-0">
-                            <!-- Wave patterns -->
-                            <svg class="absolute bottom-0 left-0 w-full opacity-20" viewBox="0 0 1440 320" xmlns="http://www.w3.org/2000/svg">
-                                <path fill="#ffffff" d="M0,96L48,112C96,128,192,160,288,160C384,160,480,128,576,122.7C672,117,768,139,864,154.7C960,171,1056,181,1152,165.3C1248,149,1344,107,1392,85.3L1440,64L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path>
-                            </svg>
-                            
-                            <!-- Geometric shapes -->
-                            <div class="absolute top-20 left-20 w-16 h-16 border-4 border-white opacity-20 rounded-full animate-float"></div>
-                            <div class="absolute top-40 right-32 w-8 h-8 bg-white opacity-10 rounded-full" style="animation: float 4s ease-in-out infinite;"></div>
-                            <div class="absolute bottom-40 left-40 w-12 h-12 bg-white opacity-10 transform rotate-45" style="animation: float 5s ease-in-out infinite;"></div>
-                            <div class="absolute top-1/3 right-20 text-white opacity-20 text-4xl">+</div>
-                            <div class="absolute bottom-1/4 right-1/3 text-white opacity-20 text-2xl">×</div>
-                            <div class="absolute top-1/2 left-1/4 w-6 h-6 border-2 border-white opacity-20"></div>
-                        </div>
-                        
-                        <!-- Content -->
-                        <div class="relative z-10 flex flex-col justify-between p-12 text-white h-full">
-                            <div class="flex-1 flex flex-col justify-center animate-fadeInLeft">
-                                <img src="/assets/nasa cairo logo.png" alt="NASA Cairo Logo" class="w-32 h-32 mb-6 animate-float">
-                                <h1 class="text-4xl font-bold">Welcome back!</h1>
-                            </div>
-                            <div class="text-center">
-                                <p class="text-white text-sm opacity-80">NASA Teams Judging System</p>
-                            </div>
-                        </div>
+            <div class="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10">
+                <div class="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950"></div>
+                <div class="pointer-events-none absolute inset-0 opacity-70" style="background-image: radial-gradient(1.5px 1.5px at 12% 18%, rgba(255,255,255,0.9), transparent), radial-gradient(1px 1px at 32% 72%, rgba(255,255,255,0.7), transparent), radial-gradient(1px 1px at 58% 34%, rgba(255,255,255,0.6), transparent), radial-gradient(1.5px 1.5px at 78% 82%, rgba(255,255,255,0.8), transparent), radial-gradient(1px 1px at 88% 12%, rgba(255,255,255,0.7), transparent), radial-gradient(1px 1px at 46% 92%, rgba(255,255,255,0.5), transparent), radial-gradient(1px 1px at 6% 56%, rgba(255,255,255,0.6), transparent); background-size: 420px 420px;"></div>
+                <div class="pointer-events-none absolute -top-48 left-1/2 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-blue-500/20 blur-3xl"></div>
+                <div class="pointer-events-none absolute -bottom-48 -right-24 h-[26rem] w-[26rem] rounded-full bg-indigo-500/20 blur-3xl"></div>
+
+                <div class="relative w-full max-w-md">
+                    <div class="mb-8 flex flex-col items-center text-center">
+                        <img src="/assets/nasa%20cairo%20logo.png" alt="NASA Space Apps Cairo" class="h-20 w-20 rounded-2xl bg-white/10 object-contain p-2 shadow-lg ring-1 ring-white/20">
+                        <p class="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">NASA Space Apps · Cairo</p>
+                        <h1 class="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">Judging System</h1>
                     </div>
 
-                    <!-- Right Section - Login Form -->
-                    <div class="flex-1 flex items-center justify-center bg-white p-12">
-                        <div class="w-full max-w-sm animate-fadeInUp">
-                            <!-- Mobile Logo -->
-                            <div class="lg:hidden text-center mb-6">
-                                <img src="/assets/nasa cairo logo.png" alt="NASA Cairo Logo" class="w-20 h-20 mx-auto mb-4">
-                            </div>
-                            
-                            <div>
-                                <h2 class="text-2xl font-bold text-gray-900 mb-6">Sign In</h2>
-                                ${LoginForm.render()}
-                            </div>
+                    <div class="rounded-2xl bg-white p-6 shadow-2xl shadow-black/40 sm:p-8">
+                        <h2 class="text-xl font-semibold text-slate-900">Sign in</h2>
+                        <p class="mt-1 text-sm text-slate-500">Use the credentials provided by the organizers.</p>
+                        <div class="mt-6">
+                            ${LoginForm.render()}
                         </div>
                     </div>
                 </div>
@@ -89,7 +28,6 @@ class LoginPage {
     }
 
     static afterRender() {
-        // Initialize the login form
         LoginForm.afterRender();
     }
 }

@@ -5,6 +5,7 @@ import { JudgesService } from './judges.service';
 import { User, UserSchema } from '../schemas/user.schema';
 import { Panel, PanelSchema } from '../schemas/panel.schema';
 import { Team, TeamSchema } from '../schemas/team.schema';
+import { Score, ScoreSchema } from '../schemas/score.schema';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { Team, TeamSchema } from '../schemas/team.schema';
       { name: User.name, schema: UserSchema },
       { name: Panel.name, schema: PanelSchema },
       { name: Team.name, schema: TeamSchema },
+      { name: Score.name, schema: ScoreSchema },
     ]),
   ],
   controllers: [JudgesController],

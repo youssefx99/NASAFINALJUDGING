@@ -4,29 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NASA Teams Judging System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              primary: {
-                50: '#eff6ff',
-                500: '#3b82f6',
-                600: '#2563eb',
-                700: '#1d4ed8',
-              },
-            },
-          },
-        },
-      };
-    </script>
+    <link rel="icon" type="image/png" href="/assets/nasa%20cairo%20logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/app.css" />
   </head>
-  <body class="bg-gradient-to-br from-blue-500 to-purple-600 min-h-screen">
+  <body class="min-h-screen">
     <div id="app"></div>
 
     <!-- Utilities -->
     <script src="/js/utils/auth.js"></script>
+    <script src="/js/utils/ui.js"></script>
     <script src="/js/utils/router.js"></script>
 
     <!-- Components -->
@@ -38,7 +27,6 @@
     <!-- Pages -->
     <script src="/js/pages/login.js"></script>
     <script src="/js/pages/admin.js"></script>
-    <script src="/js/pages/uploadData.js"></script>
     <script src="/js/pages/uploadDataStream.js"></script>
     <script src="/js/pages/judgesManagement.js"></script>
     <script src="/js/pages/judgeDetail.js"></script>

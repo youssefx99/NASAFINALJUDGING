@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type PanelDocument = Panel & Document;
 
@@ -11,10 +11,10 @@ export class Panel {
   @Prop({ type: Number, required: true }) // Changed from ObjectId to number
   stage: number;
 
-  @Prop([{ type: Types.ObjectId, ref: 'User' }])
+  @Prop([{ type: MongooseSchema.Types.ObjectId, ref: 'User' }])
   judges: Types.ObjectId[];
 
-  @Prop([{ type: Types.ObjectId, ref: 'Team' }])
+  @Prop([{ type: MongooseSchema.Types.ObjectId, ref: 'Team' }])
   teams: Types.ObjectId[];
 
   // Added: Award type for Stage 2 panels
@@ -64,3 +64,5 @@ export class Panel {
 }
 
 export const PanelSchema = SchemaFactory.createForClass(Panel);
+PanelSchema.index({ stage: 1, awardType: 1 });
+PanelSchema.index({ judges: 1 });
