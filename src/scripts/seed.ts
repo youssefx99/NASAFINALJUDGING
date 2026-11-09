@@ -40,9 +40,9 @@ const STAGE2_CRITERIA = [
   ['Community Need Alignment & Problem Relevance (1-5)', 'Local Accessibility & Community Usability (1-5)', 'Community Adoption & Sustainable Impact (1-5)'],
 ].map((questions, i) => ({ name: AWARDS[i], weight: 1.0, questions }));
 
-const TEAM_COUNT = 1000;
-const JUDGE_COUNT = 50;
-const STAGE1_PANEL_COUNT = 40;
+const TEAM_COUNT = Number(process.env.SEED_TEAMS || 1000);
+const JUDGE_COUNT = Number(process.env.SEED_JUDGES || 50);
+const STAGE1_PANEL_COUNT = Number(process.env.SEED_PANELS || 40);
 const JUDGES_PER_STAGE1_PANEL = 3;
 const JUDGES_PER_STAGE2_PANEL = 3;
 const QUALIFIED_COUNT = 60;

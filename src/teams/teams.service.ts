@@ -106,8 +106,22 @@ export class TeamsService {
     return await this.teamModel.countDocuments();
   }
 
+  // List view fields only; full team details come from getTeamById
   async getAllTeams(): Promise<Team[]> {
-    return await this.teamModel.find().lean().exec();
+    return await this.teamModel
+      .find(
+        {},
+        {
+          name: 1,
+          challenge: 1,
+          actualSolution: 1,
+          leaderName: 1,
+          leaderEmail: 1,
+          panelNumber: 1,
+        },
+      )
+      .lean()
+      .exec();
   }
 
   async getTeamById(id: string): Promise<Team | null> {

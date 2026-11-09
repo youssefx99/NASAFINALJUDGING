@@ -26,7 +26,8 @@
     "script:fix-judge-passwords": "ts-node src/scripts/fix-all-judge-passwords.ts",
     "seed": "ts-node src/scripts/seed.ts",
     "vercel-build": "npm run build",
-    "benchmark": "ts-node src/scripts/benchmark.ts"
+    "benchmark": "ts-node src/scripts/benchmark.ts",
+    "load-test": "ts-node src/scripts/load-test.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
