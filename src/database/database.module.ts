@@ -8,7 +8,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
         uri: configService.get<string>('database.uri'),
-        ...configService.get('database.options'),
       }),
       inject: [ConfigService],
     }),
