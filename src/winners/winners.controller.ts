@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { WinnersService } from './winners.service';
+import { AWARD_TYPES, WinnersService } from './winners.service';
 
 @Controller('api/winners')
 export class WinnersController {
@@ -39,6 +39,27 @@ export class WinnersController {
         success: true,
         data: winners,
         count: winners.length,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        data: [],
+      };
+    }
+  }
+
+  /**
+   * Ceremony leaderboard: winner + finalists (alphabetical, no scores) per award
+   * GET /api/winners/leaderboard?finalists=4
+   */
+  @Get('leaderboard')
+  async getLeaderboard(@Query('finalists') finalists?: string) {
+    try {
+      const count = Math.min(Math.max(parseInt(finalists ?? '4', 10) || 0, 0), 10);
+      return {
+        success: true,
+        data: await this.winnersService.getLeaderboard(count),
       };
     } catch (error) {
       return {
@@ -167,18 +188,7 @@ export class WinnersController {
   async getAwardStatus() {
     try {
       const winners = await this.winnersService.getWinnersByAward();
-      const allAwardTypes = [
-        'Best Use of Science',
-        'Best Use of Data',
-        'Best Use of Technology',
-        'Galactic Impact',
-        'Best Mission Concept',
-        'Most Inspirational',
-        'Best Use of Storytelling',
-        'Global Connection',
-        'Art & Technology',
-        'Local Impact',
-      ];
+      const allAwardTypes = AWARD_TYPES;
 
       const awardStatus = allAwardTypes.map((awardType) => {
         const winner = winners.find((w) => w.awardType === awardType);

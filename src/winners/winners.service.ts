@@ -27,6 +27,19 @@ export interface WinnersSummary {
   lowestScore: number;
 }
 
+export const AWARD_TYPES = [
+  'Best Use of Science',
+  'Best Use of Data',
+  'Best Use of Technology',
+  'Galactic Impact',
+  'Best Mission Concept',
+  'Most Inspirational',
+  'Best Use of Storytelling',
+  'Global Connection',
+  'Art & Technology',
+  'Local Impact',
+];
+
 @Injectable()
 export class WinnersService {
   constructor(
@@ -40,19 +53,77 @@ export class WinnersService {
    * First team encountered for each award type wins that award
    */
   async getWinnersByAward(): Promise<Winner[]> {
-    const awardTypes = [
-      'Best Use of Science',
-      'Best Use of Data',
-      'Best Use of Technology',
-      'Galactic Impact',
-      'Best Mission Concept',
-      'Most Inspirational',
-      'Best Use of Storytelling',
-      'Global Connection',
-      'Art & Technology',
-      'Local Impact',
-    ];
+    const teamFinalScores = await this.rankTeamsByBestAward();
 
+    // Assign winners: first team encountered for each award wins
+    const winners: Winner[] = [];
+    const assignedAwards = new Set<string>();
+
+    for (const teamData of teamFinalScores) {
+      const awardType = teamData.stage2BestAward;
+
+      // Skip if this award is already assigned or invalid
+      if (!awardType || assignedAwards.has(awardType)) {
+        continue;
+      }
+
+      // This team wins this award!
+      assignedAwards.add(awardType);
+      
+      winners.push({
+        awardType,
+        winnerTeam: {
+          _id: teamData.team._id.toString(),
+          name: teamData.team.name,
+          challenge: teamData.team.challenge,
+          leaderName: teamData.team.leaderName,
+          leaderEmail: teamData.team.leaderEmail,
+          members: teamData.team.members || [],
+        },
+        finalScore: teamData.finalScore,
+        judgeCount: teamData.judgeCount,
+        averageScore: teamData.stage2BestScore,
+      });
+
+      // Stop if all awards are assigned
+      if (assignedAwards.size === AWARD_TYPES.length) {
+        break;
+      }
+    }
+
+    return winners;
+  }
+
+  /**
+   * Ceremony leaderboard: each team competes only in its best award (same rule as the winners),
+   * so per award the winner is the top team and the finalists are the next ones,
+   * returned alphabetically without scores so their placing is not revealed.
+   */
+  async getLeaderboard(finalistCount = 4) {
+    const teamFinalScores = await this.rankTeamsByBestAward();
+    return AWARD_TYPES.map((awardType) => {
+      const teams = teamFinalScores
+        .filter((teamData) => teamData.stage2BestAward === awardType)
+        .map(({ team }) => ({
+          _id: team._id.toString(),
+          name: team.name,
+          challenge: team.challenge,
+        }));
+      return {
+        awardType,
+        winner: teams[0] || null,
+        finalists: teams
+          .slice(1, 1 + finalistCount)
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      };
+    });
+  }
+
+  /**
+   * Teams with Stage 2 award scores, each with its best award and final score
+   * (Stage 1 60% + best Stage 2 award 40%), sorted by final score (highest first)
+   */
+  private async rankTeamsByBestAward() {
     const [stage1Averages, awardAverages] = await Promise.all([
       this.scoreModel
         .aggregate([
@@ -126,45 +197,7 @@ export class WinnersService {
     });
 
     // Sort by final score (highest first)
-    teamFinalScores.sort((a, b) => b.finalScore - a.finalScore);
-
-    // Assign winners: first team encountered for each award wins
-    const winners: Winner[] = [];
-    const assignedAwards = new Set<string>();
-
-    for (const teamData of teamFinalScores) {
-      const awardType = teamData.stage2BestAward;
-
-      // Skip if this award is already assigned or invalid
-      if (!awardType || assignedAwards.has(awardType)) {
-        continue;
-      }
-
-      // This team wins this award!
-      assignedAwards.add(awardType);
-      
-      winners.push({
-        awardType,
-        winnerTeam: {
-          _id: teamData.team._id.toString(),
-          name: teamData.team.name,
-          challenge: teamData.team.challenge,
-          leaderName: teamData.team.leaderName,
-          leaderEmail: teamData.team.leaderEmail,
-          members: teamData.team.members || [],
-        },
-        finalScore: teamData.finalScore,
-        judgeCount: teamData.judgeCount,
-        averageScore: teamData.stage2BestScore,
-      });
-
-      // Stop if all awards are assigned
-      if (assignedAwards.size === awardTypes.length) {
-        break;
-      }
-    }
-
-    return winners;
+    return teamFinalScores.sort((a, b) => b.finalScore - a.finalScore);
   }
 
   /**

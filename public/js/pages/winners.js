@@ -20,6 +20,9 @@ class WinnersPage {
       actions: `
         <button type="button" id="winnersRefreshBtn" onclick="WinnersPage.loadWinners()" class="btn btn-secondary">
           ${WinnersPage.svg(WinnersPage.ICONS.refresh, 'h-4 w-4')} Refresh
+        </button>
+        <button type="button" onclick="router.navigate('/winners/leaderboard')" class="btn btn-primary">
+          ${Sidebar.icon('presentation', 'h-4 w-4')} Ceremony presentation
         </button>`,
       content: `
         <div id="winnersSummary" class="mb-6"></div>

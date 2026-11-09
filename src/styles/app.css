@@ -113,3 +113,75 @@
     @apply animate-pulse rounded bg-slate-200;
   }
 }
+
+/* Winners leaderboard presentation */
+@layer utilities {
+  .text-gold {
+    background: linear-gradient(100deg, #fde68a 0%, #fbbf24 35%, #fff7d6 50%, #f59e0b 65%, #fde68a 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer 4s linear infinite;
+  }
+  .anim-rise {
+    animation: rise-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .anim-pop {
+    animation: pop-in 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .anim-glow {
+    animation: glow 2.6s ease-in-out infinite;
+  }
+}
+
+.stage-stars,
+.stage-stars::after {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, #fff, transparent),
+    radial-gradient(1px 1px at 120px 80px, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(1.5px 1.5px at 200px 160px, #fff, transparent),
+    radial-gradient(1px 1px at 300px 40px, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 380px 220px, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 60px 260px, rgba(191, 219, 254, 0.9), transparent);
+  background-size: 400px 300px;
+  animation: drift 120s linear infinite, twinkle 4s ease-in-out infinite alternate;
+}
+.stage-stars::after {
+  content: '';
+  background-size: 260px 200px;
+  opacity: 0.5;
+  animation-duration: 80s, 3s;
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(36px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.6); filter: blur(8px); }
+  60% { opacity: 1; transform: scale(1.06); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes glow {
+  0%, 100% { filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.35)); }
+  50% { filter: drop-shadow(0 0 42px rgba(251, 191, 36, 0.75)); }
+}
+@keyframes shimmer {
+  to { background-position: 200% center; }
+}
+@keyframes drift {
+  to { background-position: 0 -1200px; }
+}
+@keyframes twinkle {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-rise, .anim-pop, .anim-glow, .text-gold, .stage-stars, .stage-stars::after {
+    animation: none;
+  }
+}

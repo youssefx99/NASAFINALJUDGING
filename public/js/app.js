@@ -19,6 +19,7 @@ class App {
     router.addRoute('/admin/stage2', Stage2ManagementPage);
     router.addRoute('/admin/stage2-qualify', Stage2QualifyPage);
     router.addRoute('/winners', WinnersPage);
+    router.addRoute('/winners/leaderboard', WinnersLeaderboardPage);
     router.addRoute('/dashboard', DashboardPage);
     router.addRoute('/stage1/:teamId', Stage1TeamDetailPage);
     router.addRoute('/stage2/:teamId', Stage2TeamDetailPage);

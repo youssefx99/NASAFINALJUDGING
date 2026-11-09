@@ -70,6 +70,7 @@ class Router {
       '/admin/stage2',
       '/admin/stage2-qualify',
       '/winners',
+      '/winners/leaderboard',
     ];
     
     // Check for dynamic routes
