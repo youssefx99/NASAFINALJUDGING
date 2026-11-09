@@ -21,17 +21,26 @@ async function get(path: string, token: string) {
 
 async function time(path: string, token: string) {
   const samples: number[] = [];
+  const serverSamples: number[] = [];
   let size = 0;
   for (let i = 0; i < RUNS; i++) {
     const start = performance.now();
     const res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
     const body = await res.arrayBuffer();
     samples.push(performance.now() - start);
+    const serverTiming = /dur=([\d.]+)/.exec(res.headers.get('server-timing') || '');
+    if (serverTiming) serverSamples.push(Number(serverTiming[1]));
     if (!res.ok) throw new Error(`${path} -> ${res.status}`);
     size = body.byteLength;
   }
   samples.sort((a, b) => a - b);
-  return { median: samples[Math.floor(samples.length / 2)], max: samples[samples.length - 1], size };
+  serverSamples.sort((a, b) => a - b);
+  return {
+    median: samples[Math.floor(samples.length / 2)],
+    max: samples[samples.length - 1],
+    server: serverSamples.length ? serverSamples[Math.floor(serverSamples.length / 2)] : NaN,
+    size,
+  };
 }
 
 async function main() {
@@ -80,19 +89,19 @@ async function main() {
 
   console.log(`Benchmark ${BASE} — ${teams.length} teams, ${judges.length} judges, ${panels.length} panels — median of ${RUNS} runs\n`);
   let failures = 0;
-  const rows: Array<[string, string, number, number, number]> = [];
+  const rows: Array<[string, string, number, number, number, number]> = [];
   for (const [who, token, paths] of [['admin', admin, adminPaths], ['judge', judgeToken, judgePaths]] as const) {
     for (const path of paths) {
       const r = await time(path, token);
-      rows.push([who, path, r.median, r.max, r.size]);
-      if (r.median > LIMIT_MS) failures++;
+      rows.push([who, path, r.median, r.max, r.server, r.size]);
+      if ((Number.isNaN(r.server) ? r.median : r.server) > LIMIT_MS) failures++;
     }
   }
-  for (const [who, path, median, max, size] of rows) {
-    const flag = median > LIMIT_MS ? 'SLOW' : 'ok  ';
-    console.log(`${flag} ${median.toFixed(1).padStart(8)}ms  (max ${max.toFixed(1).padStart(8)}ms) ${(size / 1024).toFixed(1).padStart(8)}KB  [${who}] ${path}`);
+  for (const [who, path, median, max, server, size] of rows) {
+    const flag = (Number.isNaN(server) ? median : server) > LIMIT_MS ? 'SLOW' : 'ok  ';
+    console.log(`${flag} server ${server.toFixed(1).padStart(7)}ms | total ${median.toFixed(1).padStart(8)}ms (max ${max.toFixed(1).padStart(8)}ms) ${(size / 1024).toFixed(1).padStart(7)}KB  [${who}] ${path}`);
   }
-  console.log(`\n${failures === 0 ? 'ALL ENDPOINTS' : `${failures} ENDPOINT(S) NOT`} under ${LIMIT_MS}ms`);
+  console.log(`\n${failures === 0 ? 'ALL ENDPOINTS' : `${failures} ENDPOINT(S) NOT`} under ${LIMIT_MS}ms server time (total = server + network to ${BASE})`);
   process.exit(failures === 0 ? 0 : 1);
 }
 

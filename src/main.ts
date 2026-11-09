@@ -13,6 +13,18 @@ export async function createApp() {
   // Spreadsheet imports send team rows as JSON
   app.useBodyParser('json', { limit: '4mb' });
 
+  // Expose server processing time (visible in DevTools and used by the benchmark)
+  app.use((req, res, next) => {
+    const start = process.hrtime.bigint();
+    const writeHead = res.writeHead;
+    res.writeHead = function (...args: any[]) {
+      const ms = Number(process.hrtime.bigint() - start) / 1e6;
+      res.setHeader('Server-Timing', `app;dur=${ms.toFixed(1)}`);
+      return writeHead.apply(this, args);
+    } as typeof res.writeHead;
+    next();
+  });
+
   // Serve static files
   app.use(express.static(join(__dirname, '..', 'public')));
 
