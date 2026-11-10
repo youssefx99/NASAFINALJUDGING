@@ -8,11 +8,13 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { StagesService } from './stages.service';
+import { Roles } from '../common/decorators/auth.decorators';
 
 @Controller('api/stages')
 export class StagesController {
   constructor(private readonly stagesService: StagesService) {}
 
+  @Roles('admin', 'judge')
   @Get()
   async getAllAvaStages() {
     try {
@@ -25,6 +27,7 @@ export class StagesController {
     }
   }
 
+  @Roles('admin', 'judge')
   @Get(':name')
   async getStageByName(@Param('name') name: string) {
     try {
@@ -39,6 +42,7 @@ export class StagesController {
   }
 
   // Added: Get criteria for specific award type
+  @Roles('admin', 'judge')
   @Get('award/:awardType')
   async getAwardCriteria(@Param('awardType') awardType: string) {
     try {

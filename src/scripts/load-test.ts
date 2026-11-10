@@ -6,7 +6,7 @@ const ADMINS = Number(process.env.LOAD_ADMINS || 5);
 const DURATION_MS = Number(process.env.LOAD_DURATION_S || 120) * 1000;
 const THINK_MS = Number(process.env.LOAD_THINK_MS || 0);
 const IMPORT_ROWS = Number(process.env.LOAD_IMPORT_ROWS || 0);
-const JUDGE_PASSWORD = process.env.LOAD_JUDGE_PASSWORD || 'judge123';
+const JUDGE_PASSWORD = process.env.SEED_JUDGE_PASSWORD || '';
 
 type Stat = { latencies: number[]; server: number[]; errors: number; errorSamples: string[] };
 const stats = new Map<string, Stat>();
@@ -60,7 +60,7 @@ async function judgeLoop(email: string, deadline: number) {
   const login = await call('POST /api/auth/login', '/api/auth/login', undefined, { email, password: JUDGE_PASSWORD });
   if (!login) return;
   const token = login.token;
-  const judgeId = login.user.id;
+  const judgeId = String(login.user.id);
   while (Date.now() < deadline) {
     const assigned = await call('GET /api/judges/assigned-teams', '/api/judges/assigned-teams', token);
     if (!assigned) {
@@ -133,8 +133,8 @@ const percentile = (sorted: number[], p: number) =>
 
 async function main() {
   const admin = await call('POST /api/auth/login', '/api/auth/login', undefined, {
-    email: process.env.LOAD_ADMIN_EMAIL || 'admin@test.com',
-    password: process.env.LOAD_ADMIN_PASSWORD || '1234',
+    email: process.env.ADMIN_EMAIL,
+    password: process.env.ADMIN_PASSWORD,
   });
   if (!admin) throw new Error('Admin login failed');
   const judges: any[] = (await call('GET /api/users/judges', '/api/users/judges', admin.token)) || [];

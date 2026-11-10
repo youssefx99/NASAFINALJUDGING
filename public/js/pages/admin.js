@@ -183,7 +183,7 @@ class AdminPage {
               <td class="font-medium text-slate-900">${UI.escape(team.name)}</td>
               <td class="text-slate-600">${UI.escape(team.challenge)}</td>
               <td>${team.hasScore ? `<span class="font-semibold text-blue-600">${team.averageScore.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
-              <td class="text-slate-500">${team.hasScore ? `${team.judgeCount} judge${team.judgeCount === 1 ? '' : 's'}` : '–'}</td>
+              <td class="text-slate-500">${team.hasScore ? `${UI.escape(team.judgeCount)} judge${team.judgeCount === 1 ? '' : 's'}` : '–'}</td>
               <td>${AdminPage.statusBadge(team.hasScore)}</td>
             </tr>`,
             )

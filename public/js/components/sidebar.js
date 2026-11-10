@@ -11,6 +11,7 @@ class Sidebar {
     rocket: 'M13 10V3L4 14h7v7l9-11h-7z',
     presentation: 'M8 13v-1m4 1v-3m4 3V8M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z',
     logout: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
+    key: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z',
   };
 
   static sections = [
@@ -92,6 +93,9 @@ class Sidebar {
               <p class="truncate text-sm font-medium text-white">${UI.escape(user?.name || 'Admin')}</p>
               <p class="truncate text-xs text-slate-400">${UI.escape(user?.email || '')}</p>
             </div>
+            <button onclick="ChangePasswordModal.open()" title="Change password" class="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white">
+              ${Sidebar.icon('key')}
+            </button>
             <button onclick="handleLogout()" title="Logout" class="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white">
               ${Sidebar.icon('logout')}
             </button>

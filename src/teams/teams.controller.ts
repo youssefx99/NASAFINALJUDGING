@@ -7,8 +7,11 @@ import {
   Body,
   HttpException,
   HttpStatus,
+  Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { TeamsService } from './teams.service';
+import { Roles } from '../common/decorators/auth.decorators';
 
 @Controller('api/teams')
 export class TeamsController {
@@ -37,7 +40,14 @@ export class TeamsController {
   }
 
   @Get(':id')
-  async getTeamById(@Param('id') id: string) {
+  @Roles('admin', 'judge')
+  async getTeamById(@Param('id') id: string, @Req() request: any) {
+    if (
+      request.user.role === 'judge' &&
+      !(await this.teamsService.isAssignedToJudge(id, request.user._id))
+    ) {
+      throw new ForbiddenException('This team is not assigned to you');
+    }
     try {
       const team = await this.teamsService.getTeamById(id);
       if (!team) {

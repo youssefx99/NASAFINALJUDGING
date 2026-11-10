@@ -142,7 +142,8 @@ class ChangePasswordModal {
         submitButton.textContent = 'Changing…';
 
         try {
-            await UI.api('/api/auth/change-password', { method: 'POST', body: data });
+            const result = await UI.api('/api/auth/change-password', { method: 'POST', body: data });
+            if (result?.token) authService.setToken(result.token);
             ChangePasswordModal.close();
             UI.toast('Password changed successfully', 'success');
         } catch (error) {

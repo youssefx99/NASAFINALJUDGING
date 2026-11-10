@@ -27,6 +27,15 @@ export class User {
     stage: number;
     panel: Types.ObjectId;
   }>;
+
+  @Prop({ default: 0 })
+  failedLoginAttempts: number;
+
+  @Prop()
+  lockUntil?: Date;
+
+  @Prop()
+  passwordChangedAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

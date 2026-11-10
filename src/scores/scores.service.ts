@@ -1,9 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 import { Team, TeamDocument } from '../schemas/team.schema';
 import { Panel } from '../schemas/panel.schema';
+import { Stage } from '../schemas/stage.schema';
 
 @Injectable()
 export class ScoresService {
@@ -11,9 +16,75 @@ export class ScoresService {
     @InjectModel(Score.name) private scoreModel: Model<ScoreDocument>,
     @InjectModel(Team.name) private teamModel: Model<TeamDocument>,
     @InjectModel(Panel.name) private panelModel: Model<Panel>,
+    @InjectModel(Stage.name) private stageModel: Model<Stage>,
   ) {}
 
+  // The judge must be on a panel of this stage that contains the team; the total is computed
+  // here from the answers and the stage criteria, never taken from the client
   async createScore(scoreData: any): Promise<Score> {
+    const { judgeId, teamId } = scoreData;
+    const stage = scoreData.stage;
+    if ((stage !== 1 && stage !== 2) || typeof teamId !== 'string' || !Types.ObjectId.isValid(teamId)) {
+      throw new BadRequestException('Invalid score submission');
+    }
+
+    const [panel, stageDoc] = await Promise.all([
+      this.panelModel
+        .findOne({ stage, judges: judgeId, teams: teamId }, { awardType: 1 })
+        .lean()
+        .exec(),
+      this.stageModel
+        .findOne({ name: `Stage ${stage}` }, { criteria: 1 })
+        .lean()
+        .exec(),
+    ]);
+    if (!panel) {
+      throw new ForbiddenException('This team is not assigned to you for this stage');
+    }
+    if (!stageDoc) {
+      throw new BadRequestException('Stage criteria are not configured');
+    }
+
+    const submitted =
+      scoreData.scores && typeof scoreData.scores === 'object' ? scoreData.scores : {};
+    const readAnswers = (name: string, count: number, valid: (value: number) => boolean) => {
+      const answers = submitted[name];
+      if (
+        !Array.isArray(answers) ||
+        answers.length !== count ||
+        !answers.every((value) => Number.isInteger(value) && valid(value))
+      ) {
+        throw new BadRequestException(`Invalid answers for "${name}"`);
+      }
+      return answers as number[];
+    };
+
+    const scores: Record<string, number[]> = {};
+    const criteriaScores: Record<string, number> = {};
+    let totalScore: number;
+    let awardType: string | undefined;
+    if (stage === 1) {
+      let total = 0;
+      let max = 0;
+      for (const criterion of stageDoc.criteria) {
+        const answers = readAnswers(criterion.name, criterion.questions.length, (v) => v === 0 || v === 1);
+        scores[criterion.name] = answers;
+        criteriaScores[criterion.name] = answers.reduce((sum, v) => sum + v, 0);
+        total += criteriaScores[criterion.name] * criterion.weight;
+        max += answers.length * criterion.weight;
+      }
+      totalScore = max > 0 ? (total / max) * 5 : 0;
+    } else {
+      awardType = panel.awardType;
+      const criterion = stageDoc.criteria.find((c) => c.name === awardType);
+      if (!criterion || criterion.questions.length === 0) {
+        throw new BadRequestException('Award criteria are not configured');
+      }
+      const answers = readAnswers(criterion.name, criterion.questions.length, (v) => v >= 1 && v <= 5);
+      scores[criterion.name] = answers;
+      totalScore = answers.reduce((sum, v) => sum + v, 0) / answers.length;
+    }
+
     return await this.scoreModel
       .findOneAndUpdate(
         {
@@ -22,10 +93,10 @@ export class ScoresService {
           stage: scoreData.stage,
         },
         {
-          totalScore: scoreData.totalScore,
-          scores: scoreData.scores,
-          criteriaScores: scoreData.criteriaScores || {},
-          awardType: scoreData.awardType,
+          totalScore,
+          scores,
+          criteriaScores,
+          awardType,
         },
         { upsert: true, new: true, runValidators: true },
       )

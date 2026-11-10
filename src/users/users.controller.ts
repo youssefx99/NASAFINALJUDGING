@@ -44,12 +44,6 @@ export class UsersController {
   @Put(':id')
   async updateUser(@Param('id') id: string, @Body() userData: any) {
     try {
-      console.log(
-        'Updating user:',
-        id,
-        'with data:',
-        JSON.stringify(userData, null, 2),
-      );
       return await this.usersService.updateUser(id, userData);
     } catch (error) {
       console.error('Error updating user:', error);

@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JudgesService } from './judges.service';
+import { Roles } from '../common/decorators/auth.decorators';
 import * as multer from 'multer';
 
 @Controller('api/judges')
@@ -17,23 +18,10 @@ export class JudgesController {
   constructor(private readonly judgesService: JudgesService) {}
 
   @Get('assigned-teams')
+  @Roles('judge')
   async getAssignedTeams(@Req() request: any) {
     try {
-      // For now, we'll extract user ID from a simple token
-      // In production, you'd use proper JWT middleware
-      const authHeader = request.headers.authorization;
-      if (!authHeader) {
-        throw new HttpException(
-          'No authorization header',
-          HttpStatus.UNAUTHORIZED,
-        );
-      }
-
-      const token = authHeader.replace('Bearer ', '');
-      const decoded = Buffer.from(token, 'base64').toString('utf-8');
-      const [userId] = decoded.split(':');
-
-      return await this.judgesService.getAssignedTeams(userId);
+      return await this.judgesService.getAssignedTeams(request.user._id);
     } catch (error) {
       throw new HttpException(
         error.message || 'Failed to get assigned teams',
@@ -46,6 +34,7 @@ export class JudgesController {
   @UseInterceptors(
     FileInterceptor('csvFile', {
       storage: multer.memoryStorage(),
+      limits: { fileSize: 1024 * 1024 },
       fileFilter: (req, file, cb) => {
         if (
           file.mimetype === 'text/csv' ||
@@ -69,6 +58,7 @@ export class JudgesController {
         message: 'Judges uploaded successfully',
         count: result.count,
         judges: result.judges,
+        credentials: result.credentials,
         errors: result.errors,
       };
     } catch (error) {

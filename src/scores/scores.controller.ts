@@ -1,30 +1,21 @@
-import { Controller, Post, Get, Body, Param, HttpException, HttpStatus, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, HttpException, HttpStatus, Req, ForbiddenException } from '@nestjs/common';
 import { ScoresService } from './scores.service';
+import { Roles } from '../common/decorators/auth.decorators';
 
 @Controller('api/scores')
 export class ScoresController {
   constructor(private readonly scoresService: ScoresService) {}
 
   @Post()
+  @Roles('judge')
   async createScore(@Body() scoreData: any, @Req() request: any) {
     try {
-      // Extract judge ID from token
-      const authHeader = request.headers.authorization;
-      if (!authHeader) {
-        throw new HttpException('No authorization header', HttpStatus.UNAUTHORIZED);
-      }
-
-      const token = authHeader.replace('Bearer ', '');
-      const decoded = Buffer.from(token, 'base64').toString('utf-8');
-      const [judgeId] = decoded.split(':');
-
-      console.log('Creating score for judge:', judgeId, 'team:', scoreData.teamId);
-      
       return await this.scoresService.createScore({
         ...scoreData,
-        judgeId
+        judgeId: request.user._id,
       });
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       console.error('Error creating score:', error);
       throw new HttpException(
         error.message || 'Failed to create score',
@@ -58,11 +49,16 @@ export class ScoresController {
   }
 
   @Get('judge/:judgeId/team/:teamId/stage/:stage')
+  @Roles('admin', 'judge')
   async getScoreByJudgeAndTeam(
     @Param('judgeId') judgeId: string,
     @Param('teamId') teamId: string,
-    @Param('stage') stage: string
+    @Param('stage') stage: string,
+    @Req() request: any,
   ) {
+    if (request.user.role === 'judge' && judgeId !== request.user._id) {
+      throw new ForbiddenException('You can only view your own scores');
+    }
     try {
       return await this.scoresService.getScoreByJudgeAndTeam(judgeId, teamId, parseInt(stage));
     } catch (error) {

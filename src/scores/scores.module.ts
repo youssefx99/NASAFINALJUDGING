@@ -5,6 +5,7 @@ import { ScoresService } from './scores.service';
 import { Score, ScoreSchema } from '../schemas/score.schema';
 import { Team, TeamSchema } from '../schemas/team.schema';
 import { Panel, PanelSchema } from '../schemas/panel.schema';
+import { Stage, StageSchema } from '../schemas/stage.schema';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { Panel, PanelSchema } from '../schemas/panel.schema';
       { name: Score.name, schema: ScoreSchema },
       { name: Team.name, schema: TeamSchema },
       { name: Panel.name, schema: PanelSchema },
+      { name: Stage.name, schema: StageSchema },
     ]),
   ],
   controllers: [ScoresController],

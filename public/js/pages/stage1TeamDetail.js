@@ -46,9 +46,9 @@ class Stage1TeamDetailPage {
     try {
       results = await Promise.all([
         UI.api('/api/stages/Stage%201'),
-        UI.api(`/api/teams/${teamId}`),
+        UI.api(`/api/teams/${encodeURIComponent(teamId)}`),
         UI.api('/api/judges/assigned-teams').catch(() => null),
-        UI.api(`/api/scores/judge/${judgeId}/team/${teamId}/stage/1`).catch((error) => {
+        UI.api(`/api/scores/judge/${encodeURIComponent(judgeId)}/team/${encodeURIComponent(teamId)}/stage/1`).catch((error) => {
           scoreError = error;
           return null;
         }),

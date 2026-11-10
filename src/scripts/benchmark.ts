@@ -44,14 +44,14 @@ async function time(path: string, token: string) {
 }
 
 async function main() {
-  const admin = await login(process.env.BENCH_ADMIN_EMAIL || 'admin@test.com', process.env.BENCH_ADMIN_PASSWORD || '1234');
+  const admin = await login(process.env.ADMIN_EMAIL || '', process.env.ADMIN_PASSWORD || '');
   const teams = await get('/api/teams', admin);
   const judges = await get('/api/users/judges', admin);
   const panels = await get('/api/panels', admin);
   const team = teams[0];
   const judge = judges[0];
   const panel = panels.find((p: any) => p.stage === 1) || panels[0];
-  const judgeToken = await login(judge.email, process.env.BENCH_JUDGE_PASSWORD || 'judge123');
+  const judgeToken = await login(judge.email, process.env.SEED_JUDGE_PASSWORD || '');
   const award = encodeURIComponent('Best Use of Science');
 
   const adminPaths = [

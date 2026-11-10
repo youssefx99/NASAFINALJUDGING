@@ -7,11 +7,32 @@ import * as express from 'express';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 
+// Keep in sync with the headers route in vercel.json (static files are served by the CDN there)
+const SECURITY_HEADERS: Record<string, string> = {
+  'Content-Security-Policy':
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+};
+
 export async function createApp() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Spreadsheet imports send team rows as JSON
   app.useBodyParser('json', { limit: '4mb' });
+
+  app.getHttpAdapter().getInstance().disable('x-powered-by');
+  app.use((req, res, next) => {
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+      res.setHeader(name, value);
+    }
+    if (req.path.startsWith('/api')) res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   // Expose server processing time (visible in DevTools and used by the benchmark)
   app.use((req, res, next) => {

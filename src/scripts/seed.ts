@@ -12,7 +12,10 @@ import { Team, TeamDocument } from '../schemas/team.schema';
 import { Stage, StageDocument } from '../schemas/stage.schema';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 
-const JUDGE_PASSWORD = 'judge123';
+const JUDGE_PASSWORD = process.env.SEED_JUDGE_PASSWORD || '';
+if (JUDGE_PASSWORD.length < 8) {
+  throw new Error('Set SEED_JUDGE_PASSWORD (at least 8 characters) in .env before seeding');
+}
 
 const AWARDS = [
   'Best Use of Science',
@@ -228,8 +231,8 @@ async function main() {
   );
 
   console.log('\nSeed complete:');
-  console.log(`  Admin:  admin@test.com / 1234`);
-  console.log(`  Judges: ${judges.length} (password: ${JUDGE_PASSWORD})`);
+  console.log(`  Admin:  ${process.env.ADMIN_EMAIL} (password: ADMIN_PASSWORD in .env)`);
+  console.log(`  Judges: ${judges.length} (password: SEED_JUDGE_PASSWORD in .env)`);
   console.log(`    e.g. ${judges[0].email}`);
   console.log(`  Teams: ${teams.length} | Stage 1 panels: ${stage1Panels.length} | Stage 2 panels: ${stage2Panels.length} | Scores: ${scoreCount}`);
 

@@ -504,14 +504,30 @@ class JudgesManagementPage {
       if (!response.ok) throw new Error(result.message || `Upload failed (${response.status})`);
 
       const skipped = result.errors || [];
+      const credentials = result.credentials || [];
       status.innerHTML = `
         <div class="rounded-lg border p-4 text-sm ${skipped.length ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}">
-          <p class="font-medium">Created ${result.count ?? 0} judge${result.count === 1 ? '' : 's'}${skipped.length ? `, ${skipped.length} row${skipped.length === 1 ? '' : 's'} skipped` : ''}.</p>
+          <p class="font-medium">Created ${Number(result.count) || 0} judge${result.count === 1 ? '' : 's'}${skipped.length ? `, ${skipped.length} row${skipped.length === 1 ? '' : 's'} skipped` : ''}.</p>
           ${skipped.length
             ? `<ul class="mt-2 max-h-40 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">${skipped.map((msg) => `<li>${UI.escape(msg)}</li>`).join('')}</ul>`
             : ''}
         </div>
+        ${credentials.length ? `
+          <div class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+            <p class="font-medium">Download the login details now — passwords are generated randomly and are shown only once.</p>
+            <button type="button" id="downloadCredentialsBtn" class="btn btn-primary btn-sm mt-3">Download judge logins (CSV)</button>
+          </div>` : ''}
       `;
+      document.getElementById('downloadCredentialsBtn')?.addEventListener('click', () => {
+        // Leading = + - @ would run as a spreadsheet formula when the file is opened
+        const cell = (value) => `"${String(value ?? '').replace(/^[=+\-@\t\r]/, "'$&").replace(/"/g, '""')}"`;
+        const csv = ['name,email,password', ...credentials.map((c) => [c.name, c.email, c.password].map(cell).join(','))].join('\n');
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        link.download = 'judge-logins.csv';
+        link.click();
+        URL.revokeObjectURL(link.href);
+      });
       status.classList.remove('hidden');
       UI.toast(`Uploaded ${result.count ?? 0} judges`, 'success');
       JudgesManagementPage.resetCsvForm();

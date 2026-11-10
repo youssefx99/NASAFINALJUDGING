@@ -2,32 +2,79 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { JwtService } from '@nestjs/jwt';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../schemas/user.schema';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { forgetCachedUser } from '../common/guards/auth.guard';
 import * as bcrypt from 'bcrypt';
+
+const MAX_FAILED_LOGINS = 10;
+const LOCK_MINUTES = 15;
+// Compared against when the email doesn't exist, so response time doesn't reveal valid accounts
+const DUMMY_HASH = '$2b$10$6/Y7a1SnCxhFSofTOe7lUeVCRXBSvFp07VHlw5Sd.Iy4GEbVuPYka';
 
 @Injectable()
 export class AuthService {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private readonly jwtService: JwtService,
+  ) {}
 
-  async login(email: string, password: string) {
-    const user = await this.userModel.findOne({ email }).exec();
+  // pv ties the session to the current password: changing it revokes older tokens
+  signToken(user: { _id: unknown; role: string; passwordChangedAt?: Date }) {
+    return this.jwtService.sign({
+      sub: String(user._id),
+      role: user.role,
+      pv: user.passwordChangedAt ? user.passwordChangedAt.getTime() : 0,
+    });
+  }
+
+  async login(email: unknown, password: unknown) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email || !password || password.length > 200) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const user = await this.userModel.findOne({ email: email.trim() }).exec();
 
     if (!user) {
+      await bcrypt.compare(password, DUMMY_HASH);
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
+      const minutes = Math.ceil((user.lockUntil.getTime() - Date.now()) / 60000);
+      throw new HttpException(
+        { message: `Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.` },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
+      const attempts = (user.failedLoginAttempts || 0) + 1;
+      await this.userModel.updateOne(
+        { _id: user._id },
+        attempts >= MAX_FAILED_LOGINS
+          ? { failedLoginAttempts: 0, lockUntil: new Date(Date.now() + LOCK_MINUTES * 60000) }
+          : { failedLoginAttempts: attempts },
+      );
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Generate a simple token (in production, use JWT)
-    const token = Buffer.from(`${user._id}:${Date.now()}`).toString('base64');
+    if (user.failedLoginAttempts || user.lockUntil) {
+      await this.userModel.updateOne(
+        { _id: user._id },
+        { failedLoginAttempts: 0, $unset: { lockUntil: 1 } },
+      );
+    }
+
+    const token = this.signToken(user);
 
     return {
       token,
@@ -40,24 +87,33 @@ export class AuthService {
     };
   }
 
+  // Creates the admin account from ADMIN_EMAIL / ADMIN_PASSWORD when no admin exists yet
   async createAdminUser() {
-    const existingAdmin = await this.userModel
-      .findOne({ email: 'admin@test.com' })
-      .exec();
+    const email = process.env.ADMIN_EMAIL;
+    const password = process.env.ADMIN_PASSWORD;
+    if (!email || !password) {
+      console.warn('ADMIN_EMAIL / ADMIN_PASSWORD not set: skipping admin bootstrap');
+      return;
+    }
+    if (password.length < 12) {
+      throw new Error('ADMIN_PASSWORD must be at least 12 characters');
+    }
+
+    const existingAdmin = await this.userModel.exists({ role: 'admin' }).exec();
 
     if (!existingAdmin) {
-      const hashedPassword = await bcrypt.hash('1234', 10);
+      const hashedPassword = await bcrypt.hash(password, 10);
 
       const admin = new this.userModel({
         name: 'Administrator',
-        email: 'admin@test.com',
+        email,
         passwordHash: hashedPassword,
         role: 'admin',
         panelAssignments: [],
       });
 
       await admin.save();
-      console.log('Admin user created: admin@test.com / 1234');
+      console.log(`Admin user created: ${email}`);
     }
   }
 
@@ -93,7 +149,7 @@ export class AuthService {
   async changePassword(
     userId: string,
     changePasswordDto: ChangePasswordDto,
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; token: string }> {
     const { currentPassword, newPassword, confirmPassword } = changePasswordDto;
 
     // Validate password confirmation
@@ -131,17 +187,21 @@ export class AuthService {
       );
     }
 
-    // Hash new password and update
+    // Hash new password and update; older sessions are revoked
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
 
-    await this.userModel
+    const user = await this.userModel
       .findByIdAndUpdate(
         userId,
-        { passwordHash: hashedNewPassword },
+        { passwordHash: hashedNewPassword, passwordChangedAt: new Date() },
         { new: true },
       )
       .exec();
+    forgetCachedUser(userId);
 
-    return { message: 'Password changed successfully' };
+    return {
+      message: 'Password changed successfully',
+      token: this.signToken(user!),
+    };
   }
 }

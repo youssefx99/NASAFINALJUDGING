@@ -64,16 +64,12 @@ class AuthService {
     }
 
     getUserId() {
-        if (!this.token) return null;
-        try {
-            // Decode base64 token to get user ID
-            const decoded = atob(this.token);
-            const [userId] = decoded.split(':');
-            return userId;
-        } catch (error) {
-            console.error('Error decoding token:', error);
-            return null;
-        }
+        return this.currentUser ? String(this.currentUser.id) : null;
+    }
+
+    setToken(token) {
+        this.token = token;
+        localStorage.setItem('authToken', token);
     }
 }
 

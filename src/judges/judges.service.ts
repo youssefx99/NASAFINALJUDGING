@@ -6,6 +6,7 @@ import { Panel, PanelDocument } from '../schemas/panel.schema';
 import { Team, TeamDocument } from '../schemas/team.schema';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class JudgesService {
@@ -130,9 +131,8 @@ export class JudgesService {
         // Generate email from name (lowercase with underscores)
         const finalEmail = `${name.toLowerCase().replace(/\s+/g, '_')}@judge.com`;
 
-        // Generate password: counter + first name (starting from 1)
-        const firstName = name.split(' ')[0]; // Get first name
-        const password = `${i}${firstName}`; // Counter starts from 1 (i is 1-based for data rows)
+        // Random password, returned once in the upload response so the admin can share it
+        const password = randomBytes(9).toString('base64url');
 
         const judge = {
           name: name,
@@ -189,8 +189,14 @@ export class JudgesService {
       }
     }
 
+    const passwordByEmail = new Map(newJudges.map((judge) => [judge.email, judge.password]));
     return {
       count: savedJudges.length,
+      credentials: savedJudges.map((judge) => ({
+        name: judge.name,
+        email: judge.email,
+        password: passwordByEmail.get(judge.email),
+      })),
       judges: savedJudges.map((judge) => ({
         _id: judge._id,
         name: judge.name,

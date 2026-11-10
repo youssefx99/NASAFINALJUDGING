@@ -104,6 +104,7 @@ class DashboardPage {
     }
 
     static renderStage(key) {
+        if (!DashboardPage.teams) return;
         const teams = DashboardPage.teams[key];
         const scored = DashboardPage.scored[key];
         const state = DashboardPage.state[key];

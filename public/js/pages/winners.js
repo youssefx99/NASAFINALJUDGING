@@ -58,8 +58,8 @@ class WinnersPage {
       grid.innerHTML = `<div class="card col-span-full">${UI.emptyState('No award panels found', 'Stage 2 award panels will appear here once they are set up.')}</div>`;
       return;
     }
-    const total = totalAwards || awards.length;
-    const decided = awardsWithWinners ?? awards.filter((a) => a.hasWinner).length;
+    const total = Number(totalAwards) || awards.length;
+    const decided = Number(awardsWithWinners ?? awards.filter((a) => a.hasWinner).length) || 0;
     const pct = Math.round((decided / total) * 100);
     const remaining = total - decided;
     summary.innerHTML = `

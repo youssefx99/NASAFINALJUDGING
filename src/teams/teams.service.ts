@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Team, TeamDocument } from '../schemas/team.schema';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 import { Panel, PanelDocument } from '../schemas/panel.schema';
@@ -122,6 +122,11 @@ export class TeamsService {
       )
       .lean()
       .exec();
+  }
+
+  async isAssignedToJudge(teamId: string, judgeId: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(teamId)) return false;
+    return !!(await this.panelModel.exists({ judges: judgeId, teams: teamId }).exec());
   }
 
   async getTeamById(id: string): Promise<Team | null> {

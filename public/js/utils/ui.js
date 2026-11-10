@@ -16,6 +16,11 @@ const UI = {
     } catch (e) {
       data = text;
     }
+    if (response.status === 401 && authService.isAuthenticated()) {
+      authService.logout();
+      router.navigate('/login');
+      UI.toast('Your session has expired. Please sign in again.', 'warning');
+    }
     if (!response.ok) {
       const message =
         (data && (data.message || data.error)) || `Request failed (${response.status})`;
@@ -141,6 +146,9 @@ const UI = {
 
   // Pagination controls. onChange is the name of a global function/method called with the new page number.
   pagination({ page, perPage, total, onChange }) {
+    page = Number(page) || 1;
+    perPage = Number(perPage) || 1;
+    total = Number(total) || 0;
     const totalPages = Math.max(1, Math.ceil(total / perPage));
     if (total === 0) return '';
     const from = (page - 1) * perPage + 1;

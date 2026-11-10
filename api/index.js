@@ -6,11 +6,6 @@ function getApp() {
   if (!appPromise) {
     appPromise = createApp()
       .then(async (app) => {
-        // Enable CORS for Vercel
-        app.enableCors({
-          origin: true,
-          credentials: true,
-        });
         await app.init();
         return app;
       })

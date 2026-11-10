@@ -344,10 +344,10 @@ class Stage2QualifyPage {
       const judges = (data && data.judges) || [];
       const pagination = (data && data.pagination) || {};
       this.judgesPagination = {
-        currentPage: pagination.currentPage || currentPage,
-        totalPages: pagination.totalPages || 1,
-        totalItems: pagination.totalItems || 0,
-        itemsPerPage: pagination.itemsPerPage || itemsPerPage,
+        currentPage: Number(pagination.currentPage) || currentPage,
+        totalPages: Number(pagination.totalPages) || 1,
+        totalItems: Number(pagination.totalItems) || 0,
+        itemsPerPage: Number(pagination.itemsPerPage) || itemsPerPage,
       };
       const { totalItems, totalPages } = this.judgesPagination;
       if (!judges.length && totalItems && currentPage > totalPages) {

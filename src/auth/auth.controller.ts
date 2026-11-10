@@ -4,26 +4,29 @@ import {
   Body,
   HttpException,
   HttpStatus,
-  UseGuards,
   Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { AuthGuard } from '../common/guards/auth.guard';
+import { Public, Roles } from '../common/decorators/auth.decorators';
 
 @Controller('api/auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Public()
   @Post('login')
   async login(@Body() loginDto: { email: string; password: string }) {
     try {
       const result = await this.authService.login(
-        loginDto.email,
-        loginDto.password,
+        loginDto?.email,
+        loginDto?.password,
       );
       return result;
     } catch (error) {
+      if (error instanceof HttpException && error.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+        throw error;
+      }
       throw new HttpException(
         { message: 'Invalid credentials' },
         HttpStatus.UNAUTHORIZED,
@@ -32,7 +35,7 @@ export class AuthController {
   }
 
   @Post('change-password')
-  @UseGuards(AuthGuard)
+  @Roles('admin', 'judge')
   async changePassword(
     @Req() request: any,
     @Body() changePasswordDto: ChangePasswordDto,
@@ -42,7 +45,11 @@ export class AuthController {
       const { currentPassword, newPassword, confirmPassword } =
         changePasswordDto;
 
-      if (!currentPassword || !newPassword || !confirmPassword) {
+      if (
+        [currentPassword, newPassword, confirmPassword].some(
+          (value) => typeof value !== 'string' || !value || value.length > 200,
+        )
+      ) {
         throw new HttpException(
           { message: 'All password fields are required' },
           HttpStatus.BAD_REQUEST,
@@ -58,6 +65,7 @@ export class AuthController {
       return {
         success: true,
         message: result.message,
+        token: result.token,
       };
     } catch (error: any) {
       throw new HttpException(
