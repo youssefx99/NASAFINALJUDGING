@@ -174,10 +174,10 @@ class WinnersLeaderboardPage {
   // Awards in the configured order (new / unknown awards appended), with their results
   static allAwardsInOrder() {
     const P = WinnersLeaderboardPage;
-    const byAward = new Map(P.data.map((entry) => [entry.awardType, entry]));
+    const byAward = new Map(P.data.map((entry) => [entry.id, entry]));
     const order = P.settings.order.filter((award) => byAward.has(award));
     P.data.forEach((entry) => {
-      if (!order.includes(entry.awardType)) order.push(entry.awardType);
+      if (!order.includes(entry.id)) order.push(entry.id);
     });
     return order.map((award) => byAward.get(award));
   }
@@ -185,7 +185,7 @@ class WinnersLeaderboardPage {
   // Awards that will actually be presented
   static orderedAwards() {
     const P = WinnersLeaderboardPage;
-    return P.allAwardsInOrder().filter((entry) => entry.winner && !P.settings.excluded.includes(entry.awardType));
+    return P.allAwardsInOrder().filter((entry) => entry.winner && !P.settings.excluded.includes(entry.id));
   }
 
   static renderOrderList() {
@@ -197,16 +197,17 @@ class WinnersLeaderboardPage {
     list.innerHTML = awards
       .map((entry, index) => {
         const hasWinner = !!entry.winner;
-        const included = hasWinner && !P.settings.excluded.includes(entry.awardType);
+        const included = hasWinner && !P.settings.excluded.includes(entry.id);
         if (included) position++;
         const mentions = entry.finalists.slice(0, P.settings.finalists);
         return `
-          <div class="award-row flex items-start gap-3 px-5 py-4 ${included ? '' : 'bg-slate-50'}" draggable="true" data-award="${UI.escape(entry.awardType)}">
+          <div class="award-row flex items-start gap-3 px-5 py-4 ${included ? '' : 'bg-slate-50'}" draggable="true" data-award="${UI.escape(entry.id)}">
             <span class="mt-1 cursor-grab text-slate-400" title="Drag to reorder">${P.svg('grip', 'h-5 w-5')}</span>
             <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${included ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'}">${included ? position : '–'}</span>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <p class="font-medium ${included ? 'text-slate-900' : 'text-slate-400'}">${UI.escape(entry.awardType)}</p>
+                ${entry.special ? '<span class="badge badge-blue">Special panel</span>' : ''}
                 ${hasWinner
                   ? `<span class="badge badge-green">Winner ready</span><span class="badge badge-gray">${mentions.length} honorable mention${mentions.length === 1 ? '' : 's'}</span>`
                   : '<span class="badge badge-yellow">No winner yet — skipped</span>'}
@@ -252,7 +253,7 @@ class WinnersLeaderboardPage {
 
   static reorder(from, to) {
     const P = WinnersLeaderboardPage;
-    const order = P.allAwardsInOrder().map((entry) => entry.awardType);
+    const order = P.allAwardsInOrder().map((entry) => entry.id);
     const [award] = order.splice(from, 1);
     order.splice(to, 0, award);
     P.settings.order = order;
@@ -266,7 +267,7 @@ class WinnersLeaderboardPage {
 
   static toggleAward(index, included) {
     const P = WinnersLeaderboardPage;
-    const award = P.allAwardsInOrder()[index].awardType;
+    const award = P.allAwardsInOrder()[index].id;
     P.settings.excluded = included
       ? P.settings.excluded.filter((a) => a !== award)
       : [...P.settings.excluded, award];

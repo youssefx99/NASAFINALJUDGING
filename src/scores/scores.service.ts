@@ -22,26 +22,36 @@ export class ScoresService {
   // The judge must be on a panel of this stage that contains the team; the total is computed
   // here from the answers and the stage criteria, never taken from the client
   async createScore(scoreData: any): Promise<Score> {
-    const { judgeId, teamId } = scoreData;
+    const { judgeId, teamId, panelId } = scoreData;
     const stage = scoreData.stage;
-    if ((stage !== 1 && stage !== 2) || typeof teamId !== 'string' || !Types.ObjectId.isValid(teamId)) {
+    if (
+      ![1, 2, 3].includes(stage) ||
+      typeof teamId !== 'string' ||
+      !Types.ObjectId.isValid(teamId) ||
+      (stage === 3 && (typeof panelId !== 'string' || !Types.ObjectId.isValid(panelId)))
+    ) {
       throw new BadRequestException('Invalid score submission');
     }
 
     const [panel, stageDoc] = await Promise.all([
       this.panelModel
-        .findOne({ stage, judges: judgeId, teams: teamId }, { awardType: 1 })
+        .findOne(
+          { stage, judges: judgeId, teams: teamId, ...(stage === 3 ? { _id: panelId } : {}) },
+          { awardType: 1, awardCriteria: 1 },
+        )
         .lean()
         .exec(),
-      this.stageModel
-        .findOne({ name: `Stage ${stage}` }, { criteria: 1 })
-        .lean()
-        .exec(),
+      stage === 3
+        ? null
+        : this.stageModel
+            .findOne({ name: `Stage ${stage}` }, { criteria: 1 })
+            .lean()
+            .exec(),
     ]);
     if (!panel) {
       throw new ForbiddenException('This team is not assigned to you for this stage');
     }
-    if (!stageDoc) {
+    if (stage !== 3 && !stageDoc) {
       throw new BadRequestException('Stage criteria are not configured');
     }
 
@@ -63,10 +73,18 @@ export class ScoresService {
     const criteriaScores: Record<string, number> = {};
     let totalScore: number;
     let awardType: string | undefined;
-    if (stage === 1) {
+    if (stage === 3) {
+      const questionCount = (panel.awardCriteria || []).length;
+      if (questionCount === 0) {
+        throw new BadRequestException('This special panel has no questions yet');
+      }
+      const answers = readAnswers(String(panel._id), questionCount, (v) => v >= 1 && v <= 5);
+      scores[String(panel._id)] = answers;
+      totalScore = answers.reduce((sum, v) => sum + v, 0) / answers.length;
+    } else if (stage === 1) {
       let total = 0;
       let max = 0;
-      for (const criterion of stageDoc.criteria) {
+      for (const criterion of stageDoc!.criteria) {
         const answers = readAnswers(criterion.name, criterion.questions.length, (v) => v === 0 || v === 1);
         scores[criterion.name] = answers;
         criteriaScores[criterion.name] = answers.reduce((sum, v) => sum + v, 0);
@@ -76,7 +94,7 @@ export class ScoresService {
       totalScore = max > 0 ? (total / max) * 5 : 0;
     } else {
       awardType = panel.awardType;
-      const criterion = stageDoc.criteria.find((c) => c.name === awardType);
+      const criterion = stageDoc!.criteria.find((c) => c.name === awardType);
       if (!criterion || criterion.questions.length === 0) {
         throw new BadRequestException('Award criteria are not configured');
       }
@@ -91,6 +109,7 @@ export class ScoresService {
           judge: scoreData.judgeId,
           team: scoreData.teamId,
           stage: scoreData.stage,
+          ...(stage === 3 ? { panel: panelId } : {}),
         },
         {
           totalScore,
@@ -127,12 +146,15 @@ export class ScoresService {
     judgeId: string,
     teamId: string,
     stage: number,
+    panelId?: string,
   ): Promise<Score | null> {
+    if (stage === 3 && !Types.ObjectId.isValid(panelId || '')) return null;
     return await this.scoreModel
       .findOne({
         judge: judgeId,
         team: teamId,
         stage: stage,
+        ...(stage === 3 ? { panel: panelId } : {}),
       })
       .lean()
       .exec();
@@ -313,6 +335,48 @@ export class ScoresService {
       };
     });
     return rank(teamResults, (t) => t.hasScore, (t) => t.averageScore);
+  }
+
+  // Special panel ranking: every team in the panel with its average score (unscored teams last)
+  async getSpecialPanelResults(panelId: string) {
+    if (!Types.ObjectId.isValid(panelId)) throw new BadRequestException('Invalid panel');
+    const panel = await this.panelModel
+      .findOne({ _id: panelId, stage: 3 }, { name: 1, judges: 1, teams: 1, awardCriteria: 1 })
+      .populate('teams', 'name challenge')
+      .lean()
+      .exec();
+    if (!panel) throw new BadRequestException('Special panel not found');
+    const averages = await this.scoreModel
+      .aggregate([
+        { $match: { stage: 3, panel: new Types.ObjectId(panelId) } },
+        { $group: { _id: '$team', averageScore: { $avg: '$totalScore' }, judgeCount: { $sum: 1 } } },
+      ])
+      .exec();
+    const byTeam = new Map(averages.map((a) => [String(a._id), a]));
+    const teams = (panel.teams as any[])
+      .map((team) => {
+        const result = byTeam.get(String(team._id));
+        return {
+          _id: team._id,
+          name: team.name,
+          challenge: team.challenge,
+          averageScore: result?.averageScore || 0,
+          judgeCount: result?.judgeCount || 0,
+          hasScore: !!result,
+        };
+      })
+      .sort((a, b) =>
+        a.hasScore !== b.hasScore
+          ? a.hasScore ? -1 : 1
+          : b.averageScore - a.averageScore || b.judgeCount - a.judgeCount || a.name.localeCompare(b.name),
+      );
+    return {
+      _id: panel._id,
+      name: panel.name,
+      judgeCount: panel.judges.length,
+      questionCount: (panel.awardCriteria || []).length,
+      teams,
+    };
   }
 
   // Added: Get top 60 teams from Stage 1 for Stage 2 qualification

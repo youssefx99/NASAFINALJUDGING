@@ -12,7 +12,11 @@ export class Score {
   team: Types.ObjectId;
 
   @Prop({ required: true })
-  stage: number; // 1 or 2
+  stage: number; // 1, 2, or 3 = special panel
+
+  // Special panel this score belongs to (stage 3 only)
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Panel' })
+  panel?: Types.ObjectId;
 
   @Prop({ required: true, min: 0 })
   totalScore: number;
@@ -29,6 +33,6 @@ export class Score {
 }
 
 export const ScoreSchema = SchemaFactory.createForClass(Score);
-ScoreSchema.index({ judge: 1, team: 1, stage: 1 }, { unique: true });
+ScoreSchema.index({ judge: 1, team: 1, stage: 1, panel: 1 }, { unique: true });
 ScoreSchema.index({ team: 1, stage: 1 });
 ScoreSchema.index({ stage: 1, awardType: 1, team: 1 });

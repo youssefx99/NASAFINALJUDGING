@@ -66,6 +66,7 @@ class Router {
       '/admin/judges',
       '/admin/teams',
       '/admin/panels',
+      '/admin/special-panels',
       '/admin/stage1',
       '/admin/stage2',
       '/admin/stage2-qualify',
@@ -84,7 +85,8 @@ class Router {
       isJudgeDetailRoute ||
       path === '/dashboard' ||
       path.startsWith('/stage1/') ||
-      path.startsWith('/stage2/');
+      path.startsWith('/stage2/') ||
+      path.startsWith('/special/');
 
     if (isProtectedRoute && !authService.isAuthenticated()) {
       component = this.routes['/login'];

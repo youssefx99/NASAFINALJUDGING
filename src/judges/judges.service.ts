@@ -21,11 +21,11 @@ export class JudgesService {
     const [judge, assignedPanels, scores] = await Promise.all([
       this.userModel.findById(judgeId, { role: 1 }).lean().exec(),
       this.panelModel
-        .find({ judges: judgeId }, { stage: 1, teams: 1, awardType: 1 })
+        .find({ judges: judgeId }, { stage: 1, teams: 1, awardType: 1, name: 1, awardCriteria: 1 })
         .lean()
         .exec(),
       this.scoreModel
-        .find({ judge: judgeId }, { team: 1, stage: 1 })
+        .find({ judge: judgeId }, { team: 1, stage: 1, panel: 1 })
         .lean()
         .exec(),
     ]);
@@ -47,14 +47,23 @@ export class JudgesService {
       }
     }
 
-    const [stage1TeamsDetails, stage2TeamsDetails] = await Promise.all([
+    const specialPanels = assignedPanels.filter((panel) => panel.stage === 3);
+    const specialTeamIds = specialPanels.flatMap((panel) => panel.teams || []);
+
+    const [stage1TeamsDetails, stage2TeamsDetails, specialTeamsDetails] = await Promise.all([
       stage1TeamIds.length > 0
         ? this.teamModel.find({ _id: { $in: stage1TeamIds } }).lean().exec()
         : [],
       stage2TeamIds.length > 0
         ? this.teamModel.find({ _id: { $in: stage2TeamIds } }).lean().exec()
         : [],
+      specialTeamIds.length > 0
+        ? this.teamModel.find({ _id: { $in: specialTeamIds } }).lean().exec()
+        : [],
     ]);
+    const specialTeamsById = new Map<string, unknown>(
+      (specialTeamsDetails as any[]).map((team) => [String(team._id), team]),
+    );
 
     return {
       stage1Teams: stage1TeamsDetails,
@@ -66,6 +75,15 @@ export class JudgesService {
       stage2ScoredTeamIds: scores
         .filter((score) => score.stage === 2)
         .map((score) => String(score.team)),
+      specialPanels: specialPanels.map((panel) => ({
+        _id: String(panel._id),
+        name: panel.name,
+        questions: (panel.awardCriteria || []).map((q) => ({ question: q.question, descriptions: q.descriptions })),
+        teams: (panel.teams || []).map((id) => specialTeamsById.get(String(id))).filter(Boolean),
+        scoredTeamIds: scores
+          .filter((score) => score.stage === 3 && String(score.panel) === String(panel._id))
+          .map((score) => String(score.team)),
+      })),
     };
   }
 

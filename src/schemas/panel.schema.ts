@@ -8,7 +8,7 @@ export class Panel {
   @Prop({ required: true })
   name: string;
 
-  @Prop({ type: Number, required: true }) // Changed from ObjectId to number
+  @Prop({ type: Number, required: true, enum: [1, 2, 3] }) // 3 = special panel
   stage: number;
 
   @Prop([{ type: MongooseSchema.Types.ObjectId, ref: 'User' }])
@@ -35,7 +35,7 @@ export class Panel {
   })
   awardType: string;
 
-  // Stage 2 Award Criteria with scoring descriptions
+  // Special panel questions (scored 1–5) with optional score descriptions
   @Prop({
     type: [
       {

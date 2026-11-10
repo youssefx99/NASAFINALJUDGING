@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, HttpException, HttpStatus, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Query, HttpException, HttpStatus, Req, ForbiddenException } from '@nestjs/common';
 import { ScoresService } from './scores.service';
 import { Roles } from '../common/decorators/auth.decorators';
 
@@ -55,15 +55,28 @@ export class ScoresController {
     @Param('teamId') teamId: string,
     @Param('stage') stage: string,
     @Req() request: any,
+    @Query('panel') panelId?: string,
   ) {
     if (request.user.role === 'judge' && judgeId !== request.user._id) {
       throw new ForbiddenException('You can only view your own scores');
     }
     try {
-      return await this.scoresService.getScoreByJudgeAndTeam(judgeId, teamId, parseInt(stage));
+      return await this.scoresService.getScoreByJudgeAndTeam(judgeId, teamId, parseInt(stage), panelId);
     } catch (error) {
       throw new HttpException(
         error.message || 'Failed to get score',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Get('panel/:panelId')
+  async getSpecialPanelResults(@Param('panelId') panelId: string) {
+    try {
+      return await this.scoresService.getSpecialPanelResults(panelId);
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Failed to get panel results',
         HttpStatus.BAD_REQUEST,
       );
     }

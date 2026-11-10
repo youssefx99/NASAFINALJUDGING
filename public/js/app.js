@@ -15,6 +15,7 @@ class App {
     router.addRoute('/admin/teams', TeamsManagementPage);
     router.addRoute('/admin/teams/:id', TeamDetailPage);
     router.addRoute('/admin/panels', PanelManagementPage);
+    router.addRoute('/admin/special-panels', SpecialPanelsPage);
     router.addRoute('/admin/stage1', Stage1ManagementPage);
     router.addRoute('/admin/stage2', Stage2ManagementPage);
     router.addRoute('/admin/stage2-qualify', Stage2QualifyPage);
@@ -23,6 +24,7 @@ class App {
     router.addRoute('/dashboard', DashboardPage);
     router.addRoute('/stage1/:teamId', Stage1TeamDetailPage);
     router.addRoute('/stage2/:teamId', Stage2TeamDetailPage);
+    router.addRoute('/special/:panelId/:teamId', Stage2TeamDetailPage);
 
     // Start the router
     router.start();

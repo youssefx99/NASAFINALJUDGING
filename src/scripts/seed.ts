@@ -213,7 +213,37 @@ async function main() {
     }
   });
   await scoreModel.insertMany(stage2Scores);
-  const scoreCount = stage1Scores.length + stage2Scores.length;
+  // Special panels: custom 1–5 questions, only their own judges see them; the first one is partly scored
+  const specialPanels = await panelModel.insertMany([
+    {
+      name: 'Best Hardware Prototype',
+      stage: 3,
+      judges: judges.slice(-3).map((j) => j._id),
+      teams: teams.slice(0, 15).map((t) => t._id),
+      awardCriteria: ['Prototype functionality', 'Engineering quality', 'Real-world readiness'].map((question) => ({ question })),
+    },
+    {
+      name: 'Most Creative Pitch',
+      stage: 3,
+      judges: judges.slice(-5, -3).map((j) => j._id),
+      teams: teams.slice(15, 25).map((t) => t._id),
+      awardCriteria: ['Storytelling', 'Clarity of the problem and solution'].map((question) => ({ question })),
+    },
+  ]);
+  const specialScores: any[] = [];
+  for (const judgeId of specialPanels[0].judges) {
+    for (const teamId of specialPanels[0].teams.slice(0, 10)) {
+      const values = [0, 1, 2].map(() => 1 + Math.floor(rand() * 5));
+      specialScores.push({
+        judge: judgeId, team: teamId, stage: 3, panel: specialPanels[0]._id,
+        scores: { [String(specialPanels[0]._id)]: values },
+        criteriaScores: {},
+        totalScore: values.reduce((a, b) => a + b, 0) / values.length,
+      });
+    }
+  }
+  await scoreModel.insertMany(specialScores);
+  const scoreCount = stage1Scores.length + stage2Scores.length + specialScores.length;
 
   // panelAssignments on each judge, mirroring panel.judges
   const allPanels = await panelModel.find().lean().exec();
@@ -234,7 +264,7 @@ async function main() {
   console.log(`  Admin:  ${process.env.ADMIN_EMAIL} (password: ADMIN_PASSWORD in .env)`);
   console.log(`  Judges: ${judges.length} (password: SEED_JUDGE_PASSWORD in .env)`);
   console.log(`    e.g. ${judges[0].email}`);
-  console.log(`  Teams: ${teams.length} | Stage 1 panels: ${stage1Panels.length} | Stage 2 panels: ${stage2Panels.length} | Scores: ${scoreCount}`);
+  console.log(`  Teams: ${teams.length} | Stage 1 panels: ${stage1Panels.length} | Stage 2 panels: ${stage2Panels.length} | Special panels: ${specialPanels.length} | Scores: ${scoreCount}`);
 
   await app.close();
 }

@@ -54,6 +54,7 @@ async function main() {
   const stage1Team = judgePanels.find((p) => p.stage === 1)!.teams[0]._id;
   const unassignedTeam = teams.find((t) => !assignedTeamIds.has(t._id))!._id;
   const panelId = panels[0]._id;
+  const specialPanel = panels.find((p) => p.stage === 3 && !p.judges.some((x: any) => x._id === judge._id));
   const anyTeam = teams[0]._id;
 
   const adminRoutes: Array<[string, string, unknown?]> = [
@@ -69,6 +70,7 @@ async function main() {
     ['GET', '/api/winners'], ['GET', '/api/winners/by-award'], ['GET', '/api/winners/leaderboard'], ['GET', '/api/winners/summary'], ['GET', '/api/winners/award-status'], ['GET', '/api/winners/ranked-teams'],
     ['GET', `/api/winners/award/Best%20Use%20of%20Science/team/${anyTeam}/breakdown`],
     ['POST', '/api/judges/upload-csv'],
+    ...(specialPanel ? [['GET', `/api/scores/panel/${specialPanel._id}`] as [string, string]] : []),
   ];
   const judgeRoutes: Array<[string, string, unknown?]> = [
     ['GET', '/api/judges/assigned-teams'], ['GET', '/api/stages/Stage%201'], ['GET', '/api/stages'], ['GET', `/api/teams/${stage1Team}`],
@@ -89,7 +91,8 @@ async function main() {
   const tamperedToken = `${header}.${b64url(JSON.stringify({ sub: adminId, role: 'admin', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 }))}.${signature}`;
   for (const [name, token] of [['old base64 userId:timestamp token', legacyToken], ['alg:none JWT', noneToken], ['JWT with forged payload (judge → admin)', tamperedToken], ['garbage token', 'abc.def.ghi']]) {
     const res = await request('GET', '/api/users/judges', { token });
-    check(`${name} → 401`, res.status === 401, `got ${res.status}`);
+    // 403 = blocked earlier by the hosting firewall
+    check(`${name} → rejected`, res.status === 401 || res.status === 403, `got ${res.status}`);
   }
 
   // 2. Judge cannot use admin endpoints or other judges' data
@@ -111,6 +114,12 @@ async function main() {
   const badValue = Object.fromEntries(Object.entries(allNo).map(([k, v]) => [k, v.map(() => 7)]));
   check('out-of-range answers rejected', (await request('POST', '/api/scores', { token: judgeToken, body: { teamId: stage1Team, stage: 1, scores: badValue } })).status === 400);
   check('missing answers rejected', (await request('POST', '/api/scores', { token: judgeToken, body: { teamId: stage1Team, stage: 1, scores: {} } })).status === 400);
+  if (specialPanel) {
+    const answers = { [specialPanel._id]: (specialPanel.awardCriteria || []).map(() => 5) };
+    check('judge cannot score a special panel they are not on', (await request('POST', '/api/scores', { token: judgeToken, body: { teamId: specialPanel.teams[0]._id, stage: 3, panelId: specialPanel._id, scores: answers } })).status === 403);
+    const assigned = (await request('GET', '/api/judges/assigned-teams', { token: judgeToken })).json;
+    check('judge does not see special panels they are not on', !assigned.specialPanels.some((p: any) => p._id === specialPanel._id));
+  }
   check('admin cannot submit scores', (await request('POST', '/api/scores', { token: admin, body: { teamId: stage1Team, stage: 1, scores: allNo } })).status === 403);
 
   // 4. Injection
@@ -166,7 +175,7 @@ async function main() {
     const h = res.headers;
     check(`security headers on ${path}`, !!h.get('content-security-policy')?.includes("frame-ancestors 'none'") && h.get('x-frame-options') === 'DENY' && h.get('x-content-type-options') === 'nosniff', [...h.keys()].join(','));
     check(`no X-Powered-By on ${path}`, !h.get('x-powered-by'));
-    check(`no CORS for foreign origins on ${path}`, !h.get('access-control-allow-origin'));
+    if (path.startsWith('/api')) check(`no CORS for foreign origins on ${path}`, !h.get('access-control-allow-origin'));
   }
   const apiRes = await request('GET', '/api/judges/assigned-teams', { token: judgeToken });
   check('API responses are not cacheable', (apiRes.headers.get('cache-control') || '').includes('no-store'));

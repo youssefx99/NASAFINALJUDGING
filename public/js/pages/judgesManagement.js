@@ -74,6 +74,13 @@ class JudgesManagementPage {
                 </div>
                 <div id="panelStage2List" class="grid max-h-44 grid-cols-1 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 sm:grid-cols-2"></div>
               </div>
+              <div>
+                <div class="mb-1 flex items-center justify-between">
+                  <span class="label mb-0">Special panels</span>
+                  <span id="panelStage3Count" class="text-xs text-slate-500"></span>
+                </div>
+                <div id="panelStage3List" class="grid max-h-44 grid-cols-1 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 sm:grid-cols-2"></div>
+              </div>
             </div>
             <div class="flex justify-end gap-3 rounded-b-xl border-t border-slate-200 bg-slate-50 px-5 py-4">
               <button type="button" onclick="JudgesManagementPage.hideModal()" class="btn btn-secondary">Cancel</button>
@@ -290,13 +297,13 @@ class JudgesManagementPage {
     dropZone.addEventListener('dragleave', (e) => e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50'));
     dropZone.addEventListener('drop', JudgesManagementPage.handleDrop);
 
-    for (const stage of [1, 2]) {
+    for (const stage of [1, 2, 3]) {
       document.getElementById(`panelStage${stage}List`).addEventListener('change', () => JudgesManagementPage.updatePanelCount(stage));
     }
   }
 
   static async renderPanelOptions(selectedIds) {
-    const lists = [1, 2].map((stage) => document.getElementById(`panelStage${stage}List`));
+    const lists = [1, 2, 3].map((stage) => document.getElementById(`panelStage${stage}List`));
     if (!JudgesManagementPage.panels) {
       lists.forEach((list) => (list.innerHTML = '<p class="col-span-full px-2 py-1 text-sm text-slate-500">Loading panels...</p>'));
     }
@@ -323,7 +330,7 @@ class JudgesManagementPage {
               </label>`,
             )
             .join('')
-        : `<p class="col-span-full px-2 py-1 text-sm text-slate-500">No Stage ${stage} panels yet</p>`;
+        : `<p class="col-span-full px-2 py-1 text-sm text-slate-500">No ${stage === 3 ? 'special' : `Stage ${stage}`} panels yet</p>`;
       JudgesManagementPage.updatePanelCount(stage);
     });
   }
@@ -405,7 +412,7 @@ class JudgesManagementPage {
       name: document.getElementById('judgeName').value.trim(),
       email: document.getElementById('judgeEmail').value.trim(),
       role: 'judge',
-      panelAssignments: [...selected(1), ...selected(2)],
+      panelAssignments: [...selected(1), ...selected(2), ...selected(3)],
     };
     if (!judgeId) body.password = document.getElementById('judgePassword').value;
 

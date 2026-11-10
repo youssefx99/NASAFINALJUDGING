@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { Panel, PanelDocument } from '../schemas/panel.schema';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 import { Team, TeamDocument } from '../schemas/team.schema';
 
@@ -45,6 +46,7 @@ export class WinnersService {
   constructor(
     @InjectModel(Score.name) private scoreModel: Model<ScoreDocument>,
     @InjectModel(Team.name) private teamModel: Model<TeamDocument>,
+    @InjectModel(Panel.name) private panelModel: Model<PanelDocument>,
   ) {}
 
   /**
@@ -98,10 +100,38 @@ export class WinnersService {
    * Ceremony leaderboard: each team competes only in its best award (same rule as the winners),
    * so per award the winner is the top team and the finalists are the next ones,
    * returned alphabetically without scores so their placing is not revealed.
+   * Special panels follow as extra categories, ranked by their own average score.
    */
   async getLeaderboard(finalistCount = 4) {
-    const teamFinalScores = await this.rankTeamsByBestAward();
-    return AWARD_TYPES.map((awardType) => {
+    const [teamFinalScores, specialPanels, specialAverages] = await Promise.all([
+      this.rankTeamsByBestAward(),
+      this.panelModel.find({ stage: 3 }, { name: 1 }).sort({ createdAt: 1 }).lean().exec(),
+      this.scoreModel
+        .aggregate([
+          { $match: { stage: 3 } },
+          {
+            $group: {
+              _id: { panel: '$panel', team: '$team' },
+              averageScore: { $avg: '$totalScore' },
+              judgeCount: { $sum: 1 },
+            },
+          },
+          { $lookup: { from: 'teams', localField: '_id.team', foreignField: '_id', as: 'team', pipeline: [{ $project: { name: 1, challenge: 1 } }] } },
+          { $unwind: '$team' },
+        ])
+        .exec(),
+    ]);
+    const toEntry = (id: string, awardType: string, teams: Array<{ _id: string; name: string; challenge: string }>, special: boolean) => ({
+      id,
+      awardType,
+      special,
+      winner: teams[0] || null,
+      finalists: teams
+        .slice(1, 1 + finalistCount)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    });
+
+    const regular = AWARD_TYPES.map((awardType) => {
       const teams = teamFinalScores
         .filter((teamData) => teamData.stage2BestAward === awardType)
         .map(({ team }) => ({
@@ -109,14 +139,18 @@ export class WinnersService {
           name: team.name,
           challenge: team.challenge,
         }));
-      return {
-        awardType,
-        winner: teams[0] || null,
-        finalists: teams
-          .slice(1, 1 + finalistCount)
-          .sort((a, b) => a.name.localeCompare(b.name)),
-      };
+      return toEntry(awardType, awardType, teams, false);
     });
+
+    const special = specialPanels.map((panel) => {
+      const teams = specialAverages
+        .filter((record) => String(record._id.panel) === String(panel._id))
+        .sort((a, b) => b.averageScore - a.averageScore || b.judgeCount - a.judgeCount || a.team.name.localeCompare(b.team.name))
+        .map((record) => ({ _id: String(record.team._id), name: record.team.name, challenge: record.team.challenge }));
+      return toEntry(`special:${panel._id}`, panel.name, teams, true);
+    });
+
+    return [...regular, ...special];
   }
 
   /**

@@ -1,4 +1,4 @@
-// Stage 2 Team Detail Page (for Judges)
+// Stage 2 / Special panel Team Detail Page (for Judges): 1–5 rating per question
 class Stage2TeamDetailPage {
   static state = null;
   static loadSeq = 0;
@@ -14,7 +14,7 @@ class Stage2TeamDetailPage {
 
   static render() {
     return `
-      ${Navbar.render('Stage 2 Evaluation')}
+      ${Navbar.render(Stage2TeamDetailPage.special() ? 'Special Panel Evaluation' : 'Stage 2 Evaluation')}
       <main id="stage2Root" class="mx-auto max-w-6xl px-4 pb-40 sm:px-6 lg:px-8 lg:pb-12">
         ${Stage2TeamDetailPage.renderSkeleton()}
       </main>
@@ -27,7 +27,15 @@ class Stage2TeamDetailPage {
     if (teamId) Stage2TeamDetailPage.load(teamId);
   }
 
+  // /special/:panelId/:teamId scores a team in a special panel instead of the judge's Stage 2 award
+  static special() {
+    const match = window.location.pathname.match(/^\/special\/([^/]+)\/([^/]+)/);
+    return match ? { panelId: match[1], teamId: match[2] } : null;
+  }
+
   static getTeamIdFromUrl() {
+    const special = this.special();
+    if (special) return special.teamId;
     const match = window.location.pathname.match(/\/stage2\/(.+)/);
     return match ? match[1] : null;
   }
@@ -39,6 +47,7 @@ class Stage2TeamDetailPage {
     root().innerHTML = this.renderSkeleton();
 
     const judgeId = authService.getUserId();
+    const special = this.special();
     let scoreError = null;
     let results;
     try {
@@ -46,7 +55,11 @@ class Stage2TeamDetailPage {
         UI.api('/api/stages/Stage%202'),
         UI.api(`/api/teams/${encodeURIComponent(teamId)}`),
         UI.api('/api/judges/assigned-teams'),
-        UI.api(`/api/scores/judge/${encodeURIComponent(judgeId)}/team/${encodeURIComponent(teamId)}/stage/2`).catch((error) => {
+        UI.api(
+          special
+            ? `/api/scores/judge/${encodeURIComponent(judgeId)}/team/${encodeURIComponent(teamId)}/stage/3?panel=${encodeURIComponent(special.panelId)}`
+            : `/api/scores/judge/${encodeURIComponent(judgeId)}/team/${encodeURIComponent(teamId)}/stage/2`,
+        ).catch((error) => {
           scoreError = error;
           return null;
         }),
@@ -58,29 +71,51 @@ class Stage2TeamDetailPage {
     if (!root()) return;
 
     const [stage, team, assigned, score] = results;
-    const awardType = assigned.stage2AwardType;
-    if (!awardType) {
-      root().innerHTML = this.renderError('No Stage 2 panel assignment found', 'You have not been assigned to a Stage 2 award panel yet.');
-      return;
-    }
-    const award = (stage.criteria || []).find((c) => c.name === awardType);
-    if (!award) {
-      root().innerHTML = this.renderError('No criteria configured', `There are no scoring questions for “${awardType}” yet. Please contact the administrator.`);
-      return;
+    let awardType, award, scoreKey, panelTeams, scoredTeamIds;
+    if (special) {
+      const panel = (assigned.specialPanels || []).find((p) => p._id === special.panelId);
+      if (!panel) {
+        root().innerHTML = this.renderError('Special panel not found', 'You are not assigned to this special panel.');
+        return;
+      }
+      awardType = panel.name;
+      scoreKey = panel._id;
+      panelTeams = panel.teams;
+      scoredTeamIds = panel.scoredTeamIds;
+      award = {
+        questions: (panel.questions || []).map((q) => q.question),
+        scoringDescriptions: (panel.questions || []).map((q) => q.descriptions || {}),
+      };
+    } else {
+      awardType = assigned.stage2AwardType;
+      if (!awardType) {
+        root().innerHTML = this.renderError('No Stage 2 panel assignment found', 'You have not been assigned to a Stage 2 award panel yet.');
+        return;
+      }
+      award = (stage.criteria || []).find((c) => c.name === awardType);
+      if (!award) {
+        root().innerHTML = this.renderError('No criteria configured', `There are no scoring questions for “${awardType}” yet. Please contact the administrator.`);
+        return;
+      }
+      scoreKey = awardType;
+      panelTeams = assigned.stage2Teams;
+      scoredTeamIds = assigned.stage2ScoredTeamIds;
     }
 
-    const saved = score && score.scores ? score.scores[awardType] : null;
-    const scoredIds = new Set(assigned.stage2ScoredTeamIds || []);
+    const saved = score && score.scores ? score.scores[scoreKey] : null;
+    const scoredIds = new Set(scoredTeamIds || []);
     if (saved) scoredIds.add(team._id);
     const questions = award.questions || [];
 
     this.state = {
       team,
       awardType,
+      scoreKey,
+      special,
       questions,
       descriptions: award.scoringDescriptions || [],
       scoredIds,
-      teams: assigned.stage2Teams || [],
+      teams: panelTeams || [],
       answers: questions.map((_, qi) => {
         const value = Number(saved?.[qi]);
         return value >= 1 && value <= 5 ? value : null;
@@ -164,8 +199,8 @@ class Stage2TeamDetailPage {
         <div class="h-1 bg-purple-600"></div>
         <div class="card-body">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="badge badge-purple">Stage 2</span>
-            <span class="badge badge-purple">Award: ${UI.escape(this.state.awardType)}</span>
+            <span class="badge badge-purple">${this.state.special ? 'Special panel' : 'Stage 2'}</span>
+            <span class="badge badge-purple">${this.state.special ? '' : 'Award: '}${UI.escape(this.state.awardType)}</span>
             <span id="s2Status" class="badge badge-gray">Not scored yet</span>
           </div>
           <h2 class="mt-2 break-words text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">${UI.escape(team.name)}</h2>
@@ -416,13 +451,15 @@ class Stage2TeamDetailPage {
     try {
       await UI.api('/api/scores', {
         method: 'POST',
-        body: {
-          teamId: s.team._id,
-          stage: 2,
-          scores: { [s.awardType]: scores },
-          totalScore: averageScore,
-          awardType: s.awardType,
-        },
+        body: s.special
+          ? { teamId: s.team._id, stage: 3, panelId: s.special.panelId, scores: { [s.scoreKey]: scores } }
+          : {
+              teamId: s.team._id,
+              stage: 2,
+              scores: { [s.scoreKey]: scores },
+              totalScore: averageScore,
+              awardType: s.awardType,
+            },
       });
       if (this.state !== s) return;
       s.scoredIds.add(s.team._id);
@@ -459,7 +496,7 @@ class Stage2TeamDetailPage {
     }
     const next = this.nextTeam();
     if (next) {
-      router.navigate(`/stage2/${next._id}`);
+      router.navigate(s.special ? `/special/${s.special.panelId}/${next._id}` : `/stage2/${next._id}`);
     } else {
       UI.toast('All teams scored. Returning to dashboard.', 'success');
       router.navigate('/dashboard');

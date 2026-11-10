@@ -6,12 +6,13 @@ class DashboardPage {
         stage2: { page: 1, filter: 'all', search: '' },
     };
 
-    static render() {
-        const section = (key, stage, accent) => `
+    // Sections: stage1, stage2, then one per special panel (key "sp<panelId>")
+    static sectionHtml(key, title, accent) {
+        return `
             <div class="card">
                 <div class="card-header">
                     <div class="min-w-0">
-                        <h3 class="card-title">Stage ${stage} · Assigned Teams</h3>
+                        <h3 class="card-title">${title}</h3>
                         <p id="${key}Subtitle" class="mt-0.5 text-sm text-slate-500"></p>
                     </div>
                     <span id="${key}Progress" class="text-sm font-semibold text-slate-700"></span>
@@ -33,14 +34,17 @@ class DashboardPage {
                 </div>
                 <div id="${key}Pagination"></div>
             </div>`;
+    }
 
+    static render() {
         return `
             <div class="min-h-screen bg-slate-50 pb-10">
                 ${Navbar.render('Judge Dashboard')}
                 <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
                     <div id="continueBanner" class="hidden"></div>
-                    ${section('stage1', 1, 'bg-blue-600')}
-                    ${section('stage2', 2, 'bg-purple-600')}
+                    ${DashboardPage.sectionHtml('stage1', 'Stage 1 · Assigned Teams', 'bg-blue-600')}
+                    ${DashboardPage.sectionHtml('stage2', 'Stage 2 · Assigned Teams', 'bg-purple-600')}
+                    <div id="specialSections" class="space-y-6"></div>
                 </div>
             </div>
         `;
@@ -63,9 +67,18 @@ class DashboardPage {
                 stage2: new Set(data.stage2ScoredTeamIds || []),
             };
             DashboardPage.stage2AwardType = data.stage2AwardType;
+            DashboardPage.specialPanels = {};
+            const specialHtml = (data.specialPanels || []).map((panel) => {
+                const key = `sp${panel._id}`;
+                DashboardPage.specialPanels[key] = panel;
+                DashboardPage.teams[key] = panel.teams || [];
+                DashboardPage.scored[key] = new Set(panel.scoredTeamIds || []);
+                DashboardPage.state[key] = { page: 1, filter: 'all', search: '' };
+                return DashboardPage.sectionHtml(key, `Special panel · ${UI.escape(panel.name)}`, 'bg-teal-600');
+            });
+            document.getElementById('specialSections').innerHTML = specialHtml.join('');
             DashboardPage.renderContinueBanner();
-            DashboardPage.renderStage('stage1');
-            DashboardPage.renderStage('stage2');
+            Object.keys(DashboardPage.teams).forEach((key) => DashboardPage.renderStage(key));
         } catch (error) {
             console.error('Failed to load assigned teams:', error);
             DashboardPage.renderErrorState(error);
@@ -74,10 +87,10 @@ class DashboardPage {
 
     static renderContinueBanner() {
         const banner = document.getElementById('continueBanner');
-        const next = ['stage1', 'stage2']
+        const next = Object.keys(DashboardPage.teams)
             .map((key) => ({ key, team: DashboardPage.teams[key].find((t) => !DashboardPage.scored[key].has(t._id)) }))
             .find((entry) => entry.team);
-        const total = DashboardPage.teams.stage1.length + DashboardPage.teams.stage2.length;
+        const total = Object.values(DashboardPage.teams).reduce((sum, teams) => sum + teams.length, 0);
         if (total === 0) {
             banner.classList.add('hidden');
             return;
@@ -87,11 +100,11 @@ class DashboardPage {
             ? `
             <div class="card flex flex-col gap-4 bg-gradient-to-r from-slate-900 to-blue-900 p-5 text-white sm:flex-row sm:items-center">
                 <div class="min-w-0 flex-1">
-                    <p class="text-sm text-blue-200">Next team to score · Stage ${next.key === 'stage1' ? 1 : 2}</p>
+                    <p class="text-sm text-blue-200">Next team to score · ${next.key === 'stage1' ? 'Stage 1' : next.key === 'stage2' ? 'Stage 2' : UI.escape(DashboardPage.specialPanels[next.key].name)}</p>
                     <p class="truncate text-lg font-semibold">${UI.escape(next.team.name)}</p>
                     <p class="truncate text-sm text-blue-100">${UI.escape(next.team.challenge)}</p>
                 </div>
-                <button onclick="router.navigate('/${next.key}/${next.team._id}')" class="btn bg-white text-slate-900 hover:bg-blue-50">Continue scoring →</button>
+                <button onclick="router.navigate('${DashboardPage.teamLink(next.key, next.team._id)}')" class="btn bg-white text-slate-900 hover:bg-blue-50">Continue scoring →</button>
             </div>`
             : `
             <div class="card flex items-center gap-4 border-emerald-200 bg-emerald-50 p-5">
@@ -103,12 +116,17 @@ class DashboardPage {
             </div>`;
     }
 
+    static teamLink(key, teamId) {
+        const special = DashboardPage.specialPanels?.[key];
+        return special ? `/special/${special._id}/${teamId}` : `/${key}/${teamId}`;
+    }
+
     static renderStage(key) {
         if (!DashboardPage.teams) return;
         const teams = DashboardPage.teams[key];
         const scored = DashboardPage.scored[key];
         const state = DashboardPage.state[key];
-        const stage = key === 'stage1' ? 1 : 2;
+        const stage = key === 'stage1' ? 1 : key === 'stage2' ? 2 : 3;
 
         const scoredCount = teams.filter((team) => scored.has(team._id)).length;
         const percent = teams.length ? Math.round((scoredCount / teams.length) * 100) : 0;
@@ -117,13 +135,13 @@ class DashboardPage {
         document.getElementById(`${key}Subtitle`).innerHTML =
             key === 'stage2' && DashboardPage.stage2AwardType
                 ? `Award category: <span class="font-medium text-purple-700">${UI.escape(DashboardPage.stage2AwardType)}</span>`
-                : `${teams.length - scoredCount} remaining`;
+                : `${teams.length - scoredCount} remaining${stage === 3 ? ' · rate each question 1–5' : ''}`;
 
         const list = document.getElementById(`${key}List`);
         if (teams.length === 0) {
             list.innerHTML = UI.emptyState(
                 'No teams assigned yet',
-                stage === 1 ? 'Teams will appear here once assigned by the admin' : 'Qualified teams from Stage 1 will appear here once the admin runs qualification',
+                stage === 2 ? 'Qualified teams from Stage 1 will appear here once the admin runs qualification' : 'Teams will appear here once assigned by the admin',
             );
             document.getElementById(`${key}Pagination`).innerHTML = '';
             return;
@@ -145,7 +163,7 @@ class DashboardPage {
             ? pageTeams.map((team) => {
                 const isScored = scored.has(team._id);
                 return `
-                <button onclick="router.navigate('/${key}/${team._id}')" class="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-slate-50">
+                <button onclick="router.navigate('${DashboardPage.teamLink(key, team._id)}')" class="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-slate-50">
                     <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${isScored ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${isScored ? '✓' : '•'}</span>
                     <span class="min-w-0 flex-1">
                         <span class="block truncate font-medium text-slate-900">${UI.escape(team.name)}</span>
@@ -162,18 +180,13 @@ class DashboardPage {
             page: state.page,
             perPage: DashboardPage.itemsPerPage,
             total: filtered.length,
-            onChange: key === 'stage1' ? 'DashboardPage.goToStage1Page' : 'DashboardPage.goToStage2Page',
+            onChange: `DashboardPage.goToPage.bind(null, '${key}')`,
         });
     }
 
-    static goToStage1Page(page) {
-        DashboardPage.state.stage1.page = page;
-        DashboardPage.renderStage('stage1');
-    }
-
-    static goToStage2Page(page) {
-        DashboardPage.state.stage2.page = page;
-        DashboardPage.renderStage('stage2');
+    static goToPage(key, page) {
+        DashboardPage.state[key].page = page;
+        DashboardPage.renderStage(key);
     }
 
     static onSearch = UI.debounce((key, value) => {

@@ -84,6 +84,9 @@ export class PanelsService {
     if (!result) {
       throw new Error('Panel not found');
     }
+    if (result.stage === 3) {
+      await this.panelModel.db.collection('scores').deleteMany({ stage: 3, panel: result._id });
+    }
   }
 
   async getPanelsByStage(stage: number): Promise<Panel[]> {
