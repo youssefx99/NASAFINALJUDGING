@@ -39,7 +39,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const user = await this.userModel.findOne({ email: email.trim() }).exec();
+    const user = await this.userModel.findOne({ email: email.trim().toLowerCase() }).exec();
 
     if (!user) {
       await bcrypt.compare(password, DUMMY_HASH);
@@ -159,15 +159,6 @@ export class AuthService {
       );
     }
 
-    // Validate current password
-    const isCurrentPasswordValid = await this.validateCurrentPassword(
-      userId,
-      currentPassword,
-    );
-    if (!isCurrentPasswordValid) {
-      throw new BadRequestException('Current password is incorrect');
-    }
-
     // Validate new password strength
     const passwordValidation = this.validatePasswordStrength(newPassword);
     if (!passwordValidation.isValid) {
@@ -176,20 +167,26 @@ export class AuthService {
       );
     }
 
-    // Check if new password is different from current password
-    const isSamePassword = await bcrypt.compare(
-      newPassword,
-      (await this.userModel.findById(userId).exec()).passwordHash,
-    );
+    const existing = await this.userModel.findById(userId, { passwordHash: 1 }).lean().exec();
+    if (!existing) {
+      throw new UnauthorizedException('User not found');
+    }
+    // Both checks and the new hash run in parallel (bcrypt work happens on separate threads)
+    const [isCurrentPasswordValid, isSamePassword, hashedNewPassword] = await Promise.all([
+      bcrypt.compare(currentPassword, existing.passwordHash),
+      bcrypt.compare(newPassword, existing.passwordHash),
+      bcrypt.hash(newPassword, 10),
+    ]);
+    if (!isCurrentPasswordValid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
     if (isSamePassword) {
       throw new BadRequestException(
         'New password must be different from current password',
       );
     }
 
-    // Hash new password and update; older sessions are revoked
-    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-
+    // Update; older sessions are revoked
     const user = await this.userModel
       .findByIdAndUpdate(
         userId,

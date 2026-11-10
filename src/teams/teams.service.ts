@@ -134,31 +134,25 @@ export class TeamsService {
   }
 
   async deleteTeam(id: string): Promise<void> {
-    const team = await this.teamModel.findById(id);
-    if (!team) {
-      throw new Error('Team not found');
-    }
-
-    // Delete all scores and panel references associated with this team
-    await Promise.all([
+    // Team, its scores and panel references are removed together
+    const [team] = await Promise.all([
+      this.teamModel.findByIdAndDelete(id),
       this.scoreModel.deleteMany({ team: id }),
       this.panelModel.updateMany({ teams: id }, { $pull: { teams: id } }),
     ]);
-
-    // Delete the team
-    await this.teamModel.findByIdAndDelete(id);
+    if (!team) {
+      throw new Error('Team not found');
+    }
   }
 
   async deleteAllTeams(): Promise<{ deletedCount: number }> {
     try {
-      // Delete all scores and panel team lists first
-      await Promise.all([
+      // Teams, scores and panel team lists are cleared together
+      const [result] = await Promise.all([
+        this.teamModel.deleteMany({}),
         this.scoreModel.deleteMany({}),
         this.panelModel.updateMany({}, { teams: [] }),
       ]);
-
-      // Delete all teams
-      const result = await this.teamModel.deleteMany({});
 
       return { deletedCount: result.deletedCount || 0 };
     } catch (error) {

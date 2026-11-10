@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Panel } from '../schemas/panel.schema';
@@ -188,103 +188,33 @@ export class Stage2QualificationService {
   }
 
   async qualifyTopTeams(limit: number = 60) {
-    // VALIDATION: Check limit is valid
-    if (!limit || limit < 1 || limit > 500) {
-      throw new Error(`Invalid limit: ${limit}. Must be between 1 and 500.`);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+      throw new BadRequestException(`Invalid limit: ${limit}. Must be a whole number between 1 and 500.`);
     }
 
-    console.log(
-      `[QUALIFICATION] Starting qualification process for top ${limit} teams`,
-    );
-
-    // Get top N teams
-    const topTeams = await this.getTopTeamsForQualification(limit);
-
+    const [topTeams, stage2PanelCount] = await Promise.all([
+      this.getTopTeamsForQualification(limit),
+      this.panelModel.countDocuments({ stage: 2 }).exec(),
+    ]);
     if (topTeams.length === 0) {
-      throw new Error('No teams found with Stage 1 scores');
+      throw new BadRequestException('No teams found with Stage 1 scores');
+    }
+    if (stage2PanelCount === 0) {
+      throw new BadRequestException('No Stage 2 panels found. Please create Stage 2 panels first.');
     }
 
-    const topTeamIds = topTeams.map((t) => t._id.toString());
+    // Every Stage 2 award panel gets the same qualified teams in a single update
+    const topTeamIds = topTeams.map((t) => t._id);
+    const result = await this.panelModel
+      .updateMany({ stage: 2 }, { teams: topTeamIds })
+      .exec();
+    console.log(`[QUALIFICATION] Qualified ${topTeamIds.length} teams to ${result.matchedCount} Stage 2 panels`);
 
-    console.log(`[QUALIFICATION] Found ${topTeamIds.length} teams to qualify`);
-    console.log(
-      `[QUALIFICATION] Team IDs: ${topTeamIds.slice(0, 5).join(', ')}...`,
-    );
-
-    // Get all Stage 2 panels
-    const stage2Panels = await this.panelModel.find({ stage: 2 }).exec();
-
-    if (stage2Panels.length === 0) {
-      throw new Error(
-        'No Stage 2 panels found. Please create Stage 2 panels first.',
-      );
-    }
-
-    console.log(
-      `[QUALIFICATION] Found ${stage2Panels.length} Stage 2 panels to update`,
-    );
-
-    // SAFETY: Store original panel data for rollback
-    const originalPanelData = stage2Panels.map((panel) => ({
-      id: (panel as any)._id,
-      teams: panel.teams,
-    }));
-
-    let updatedCount = 0;
-
-    try {
-      // Update each Stage 2 panel with all top N teams
-      for (const panel of stage2Panels) {
-        const result = await this.panelModel
-          .findByIdAndUpdate(
-            (panel as any)._id,
-            { teams: topTeamIds },
-            { new: true }, // Return updated document
-          )
-          .exec();
-
-        if (!result) {
-          throw new Error(`Failed to update panel: ${panel.name}`);
-        }
-
-        updatedCount++;
-        console.log(
-          `[QUALIFICATION] Updated panel: ${panel.name} (${updatedCount}/${stage2Panels.length})`,
-        );
-      }
-
-      console.log(
-        `[QUALIFICATION] ✅ Successfully qualified ${topTeamIds.length} teams to ${updatedCount} panels`,
-      );
-
-      return {
-        success: true,
-        qualifiedTeams: topTeamIds.length,
-        updatedPanels: updatedCount,
-        teamIds: topTeamIds,
-      };
-    } catch (error) {
-      // ROLLBACK: Restore original panel data if something failed
-      console.error(
-        `[QUALIFICATION] ❌ Error during qualification: ${error.message}`,
-      );
-      console.log(`[QUALIFICATION] Rolling back changes...`);
-
-      for (const original of originalPanelData) {
-        try {
-          await this.panelModel
-            .findByIdAndUpdate(original.id, { teams: original.teams })
-            .exec();
-        } catch (rollbackError) {
-          console.error(
-            `[QUALIFICATION] Failed to rollback panel ${original.id}: ${rollbackError.message}`,
-          );
-        }
-      }
-
-      throw new Error(
-        `Qualification failed and was rolled back: ${error.message}`,
-      );
-    }
+    return {
+      success: true,
+      qualifiedTeams: topTeamIds.length,
+      updatedPanels: result.matchedCount,
+      teamIds: topTeamIds.map(String),
+    };
   }
 }

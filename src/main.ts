@@ -6,6 +6,7 @@ import { PanelsService } from './panels/panels.service';
 import * as express from 'express';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { DatabaseExceptionFilter } from './common/filters/database-exception.filter';
 
 // Keep in sync with the headers route in vercel.json (static files are served by the CDN there)
 const SECURITY_HEADERS: Record<string, string> = {
@@ -24,6 +25,7 @@ export async function createApp() {
 
   // Spreadsheet imports send team rows as JSON
   app.useBodyParser('json', { limit: '4mb' });
+  app.useGlobalFilters(new DatabaseExceptionFilter(app.getHttpAdapter()));
 
   app.getHttpAdapter().getInstance().disable('x-powered-by');
   app.use((req, res, next) => {

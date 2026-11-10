@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../schemas/user.schema';
 import { Panel, PanelDocument } from '../schemas/panel.schema';
 import * as bcrypt from 'bcrypt';
@@ -12,7 +12,7 @@ const PRIVATE_FIELDS = { passwordHash: 0, failedLoginAttempts: 0, lockUntil: 0, 
 function pickUserFields(userData: any) {
   const fields: Record<string, unknown> = {};
   if (typeof userData?.name === 'string') fields.name = userData.name.trim();
-  if (typeof userData?.email === 'string') fields.email = userData.email.trim();
+  if (typeof userData?.email === 'string') fields.email = userData.email.trim().toLowerCase();
   if (Array.isArray(userData?.panelAssignments)) fields.panelAssignments = userData.panelAssignments;
   if (userData?.password !== undefined) {
     if (typeof userData.password !== 'string' || userData.password.length < 8 || userData.password.length > 200) {
@@ -90,34 +90,36 @@ export class UsersService {
     return judge;
   }
 
+  // Makes panel.judges match the judge's assignments: remove everywhere, then add (one ordered round trip)
   private async syncJudgeToPanels(
     judgeId: string,
     panelAssignments: any[],
   ): Promise<void> {
-    // Remove judge from all panels first
-    await this.panelModel.updateMany(
-      { judges: judgeId },
-      { $pull: { judges: judgeId } },
-    );
-
-    // Add judge to assigned panels
     const panelIds = panelAssignments
       .map((assignment) => assignment.panel)
       .filter(Boolean);
-    if (panelIds.length > 0) {
-      await this.panelModel.updateMany(
-        { _id: { $in: panelIds } },
-        { $addToSet: { judges: judgeId } },
-      );
-    }
+    const operations: any[] = [
+        { updateMany: { filter: { judges: judgeId }, update: { $pull: { judges: judgeId } } } },
+        ...(panelIds.length
+          ? [{ updateMany: { filter: { _id: { $in: panelIds } }, update: { $addToSet: { judges: judgeId } } } }]
+          : []),
+    ];
+    await this.panelModel.bulkWrite(operations, { ordered: true });
   }
 
   async deleteUser(id: string): Promise<void> {
-    const result = await this.userModel.findByIdAndDelete(id);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new Error('User not found');
+    }
+    // A removed judge's scores are removed too, so they no longer count in any ranking
+    const [result] = await Promise.all([
+      this.userModel.findByIdAndDelete(id),
+      this.panelModel.updateMany({ judges: id }, { $pull: { judges: id } }),
+      this.panelModel.db.collection('scores').deleteMany({ judge: new Types.ObjectId(id) }),
+    ]);
+    forgetCachedUser(id);
     if (!result) {
       throw new Error('User not found');
     }
-    await this.panelModel.updateMany({ judges: id }, { $pull: { judges: id } });
-    forgetCachedUser(id);
   }
 }

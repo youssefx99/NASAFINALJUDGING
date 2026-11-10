@@ -31,62 +31,38 @@ export class PanelsService {
 
   async createPanel(panelData: any): Promise<Panel> {
     const panel = new this.panelModel(panelData);
-    const savedPanel = await panel.save();
-
-    // Update judge assignments
-    if (panelData.judges && panelData.judges.length > 0) {
-      await this.updateJudgeAssignments(
-        (savedPanel._id as any).toString(),
-        panelData.stage,
-        panelData.judges,
-      );
-    }
-
+    // Panel id exists before saving, so judge assignments are written in parallel
+    const [savedPanel] = await Promise.all([
+      panel.save(),
+      this.syncJudgeAssignments(String(panel._id), [], panelData.stage, panelData.judges || []),
+    ]);
     return savedPanel;
   }
 
   async updatePanel(id: string, panelData: any): Promise<Panel> {
-    // Get the old panel to see previous judge assignments
-    const oldPanel = await this.panelModel.findById(id);
-
-    const panel = await this.panelModel.findByIdAndUpdate(id, panelData, {
-      new: true,
+    // The pre-update document gives the previous judges in the same round trip
+    const oldPanel = await this.panelModel.findByIdAndUpdate(id, panelData, {
+      new: false,
+      runValidators: true,
     });
-    if (!panel) {
+    if (!oldPanel) {
       throw new Error('Panel not found');
     }
-
-    // Remove old judge assignments for this panel
-    if (oldPanel && oldPanel.judges) {
-      await this.removeJudgeAssignments(
-        id,
-        oldPanel.stage as any,
-        oldPanel.judges,
-      );
-    }
-
-    // Add new judge assignments
-    if (panelData.judges && panelData.judges.length > 0) {
-      await this.updateJudgeAssignments(id, panelData.stage, panelData.judges);
-    }
-
-    return panel;
+    await this.syncJudgeAssignments(id, oldPanel.judges || [], panelData.stage ?? oldPanel.stage, panelData.judges ?? oldPanel.judges ?? [], oldPanel.stage);
+    return Object.assign(oldPanel, panelData);
   }
 
   async deletePanel(id: string): Promise<void> {
-    // Get panel to remove judge assignments
-    const panel = await this.panelModel.findById(id);
-    if (panel && panel.judges) {
-      await this.removeJudgeAssignments(id, panel.stage as any, panel.judges);
-    }
-
     const result = await this.panelModel.findByIdAndDelete(id);
     if (!result) {
       throw new Error('Panel not found');
     }
-    if (result.stage === 3) {
-      await this.panelModel.db.collection('scores').deleteMany({ stage: 3, panel: result._id });
-    }
+    await Promise.all([
+      this.syncJudgeAssignments(id, result.judges || [], result.stage, []),
+      result.stage === 3
+        ? this.panelModel.db.collection('scores').deleteMany({ stage: 3, panel: result._id })
+        : null,
+    ]);
   }
 
   async getPanelsByStage(stage: number): Promise<Panel[]> {
@@ -98,40 +74,32 @@ export class PanelsService {
       .exec();
   }
 
-  private async updateJudgeAssignments(
+  // Mirrors panel.judges into each judge's panelAssignments in one ordered round trip
+  private async syncJudgeAssignments(
     panelId: string,
+    oldJudgeIds: any[],
     stage: number,
-    judgeIds: string[],
+    newJudgeIds: any[],
+    oldStage: number = stage,
   ): Promise<void> {
-    await this.userModel.updateMany(
-      { _id: { $in: judgeIds } },
-      {
-        $addToSet: {
-          panelAssignments: {
-            stage: stage,
-            panel: panelId,
-          },
+    const operations: any[] = [];
+    if (oldJudgeIds.length) {
+      operations.push({
+        updateMany: {
+          filter: { _id: { $in: oldJudgeIds } },
+          update: { $pull: { panelAssignments: { stage: oldStage, panel: panelId } } },
         },
-      },
-    );
-  }
-
-  private async removeJudgeAssignments(
-    panelId: string,
-    stage: number,
-    judgeIds: any[],
-  ): Promise<void> {
-    await this.userModel.updateMany(
-      { _id: { $in: judgeIds } },
-      {
-        $pull: {
-          panelAssignments: {
-            stage: stage,
-            panel: panelId,
-          },
+      });
+    }
+    if (newJudgeIds.length) {
+      operations.push({
+        updateMany: {
+          filter: { _id: { $in: newJudgeIds } },
+          update: { $addToSet: { panelAssignments: { stage, panel: panelId } } },
         },
-      },
-    );
+      });
+    }
+    if (operations.length) await this.userModel.bulkWrite(operations, { ordered: true });
   }
 
   async createStage2Panels() {

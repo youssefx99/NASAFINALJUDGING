@@ -49,16 +49,18 @@ class JudgeDetailPage {
       ]);
       if (!document.getElementById('judgeContent')) return;
 
-      const scoreByStageTeam = new Map(scores.map((s) => [`${s.stage}:${s.team?._id || s.team}`, s]));
+      // Stage 2 scores are per award, special-panel scores per panel
+      const scoreKey = (stage, teamId, award, panelId) => `${stage}:${teamId}:${stage === 2 ? award : stage === 3 ? panelId : ''}`;
+      const scoreByStageTeam = new Map(scores.map((s) => [scoreKey(s.stage, s.team?._id || s.team, s.awardType, s.panel), s]));
       const myPanels = panels.filter((p) => (p.judges || []).some((j) => j && (j._id || j) === judge._id));
 
-      JudgeDetailPage.stages = [1, 2]
+      JudgeDetailPage.stages = [1, 2, 3]
         .map((stage) => {
           const stagePanels = myPanels.filter((p) => Number(p.stage) === stage);
           const rows = stagePanels.flatMap((panel) =>
             (panel.teams || []).filter(Boolean).map((t) => {
               const teamId = t._id || t;
-              const score = scoreByStageTeam.get(`${stage}:${teamId}`) || null;
+              const score = scoreByStageTeam.get(scoreKey(stage, teamId, panel.awardType, panel._id)) || null;
               return { teamId, teamName: t.name || score?.team?.name || 'Unknown team', challenge: t.challenge || '', panel, score };
             }),
           );
@@ -107,7 +109,9 @@ class JudgeDetailPage {
       s.panels.map((p) =>
         s.stage === 1
           ? `<span class="badge badge-blue">S1 · ${UI.escape(p.name)}</span>`
-          : `<span class="badge badge-purple">S2 · ${UI.escape(p.awardType || p.name)}</span>`,
+          : s.stage === 2
+            ? `<span class="badge badge-purple">S2 · ${UI.escape(p.awardType || p.name)}</span>`
+            : `<span class="badge badge-green">Special · ${UI.escape(p.name)}</span>`,
       ),
     );
 
@@ -197,7 +201,7 @@ class JudgeDetailPage {
           <section class="border-b border-slate-200 last:border-b-0">
             <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
               <div>
-                <h3 class="text-sm font-semibold ${isStage2 ? 'text-purple-700' : 'text-blue-700'}">Stage ${stage} teams</h3>
+                <h3 class="text-sm font-semibold ${isStage2 ? 'text-purple-700' : stage === 3 ? 'text-teal-700' : 'text-blue-700'}">${stage === 3 ? 'Special panel teams' : `Stage ${stage} teams`}</h3>
                 <p class="text-xs text-slate-500">${panels.length} panel${panels.length === 1 ? '' : 's'} · ${scored} of ${rows.length} scored</p>
               </div>
               <div class="flex w-full items-center gap-3 sm:w-56">

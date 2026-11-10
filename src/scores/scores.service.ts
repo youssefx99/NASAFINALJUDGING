@@ -24,21 +24,25 @@ export class ScoresService {
   async createScore(scoreData: any): Promise<Score> {
     const { judgeId, teamId, panelId } = scoreData;
     const stage = scoreData.stage;
+    const hasPanelId = typeof panelId === 'string' && Types.ObjectId.isValid(panelId);
     if (
       ![1, 2, 3].includes(stage) ||
       typeof teamId !== 'string' ||
       !Types.ObjectId.isValid(teamId) ||
-      (stage === 3 && (typeof panelId !== 'string' || !Types.ObjectId.isValid(panelId)))
+      (panelId !== undefined && !hasPanelId) ||
+      (stage === 3 && !hasPanelId)
     ) {
       throw new BadRequestException('Invalid score submission');
     }
 
-    const [panel, stageDoc] = await Promise.all([
+    // A judge can sit on several Stage 2 award panels, so Stage 2 scores name the panel (award) they are for
+    const [candidates, stageDoc] = await Promise.all([
       this.panelModel
-        .findOne(
-          { stage, judges: judgeId, teams: teamId, ...(stage === 3 ? { _id: panelId } : {}) },
+        .find(
+          { stage, judges: judgeId, teams: teamId, ...(hasPanelId ? { _id: panelId } : {}) },
           { awardType: 1, awardCriteria: 1 },
         )
+        .limit(2)
         .lean()
         .exec(),
       stage === 3
@@ -48,8 +52,12 @@ export class ScoresService {
             .lean()
             .exec(),
     ]);
+    const panel = candidates[0];
     if (!panel) {
       throw new ForbiddenException('This team is not assigned to you for this stage');
+    }
+    if (stage === 2 && candidates.length > 1) {
+      throw new BadRequestException('You are on more than one award panel for this team; choose the award you are scoring');
     }
     if (stage !== 3 && !stageDoc) {
       throw new BadRequestException('Stage criteria are not configured');
@@ -109,6 +117,7 @@ export class ScoresService {
           judge: scoreData.judgeId,
           team: scoreData.teamId,
           stage: scoreData.stage,
+          ...(stage === 2 ? { awardType } : {}),
           ...(stage === 3 ? { panel: panelId } : {}),
         },
         {
@@ -148,12 +157,19 @@ export class ScoresService {
     stage: number,
     panelId?: string,
   ): Promise<Score | null> {
-    if (stage === 3 && !Types.ObjectId.isValid(panelId || '')) return null;
+    const hasPanelId = Types.ObjectId.isValid(panelId || '');
+    if (stage === 3 && !hasPanelId) return null;
+    // Stage 2 scores are per award: the panel tells which award
+    const awardType =
+      stage === 2 && hasPanelId
+        ? (await this.panelModel.findById(panelId, { awardType: 1 }).lean().exec())?.awardType
+        : undefined;
     return await this.scoreModel
       .findOne({
         judge: judgeId,
         team: teamId,
         stage: stage,
+        ...(awardType ? { awardType } : {}),
         ...(stage === 3 ? { panel: panelId } : {}),
       })
       .lean()

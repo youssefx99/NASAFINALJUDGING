@@ -24,13 +24,14 @@ export class Stage2QualificationController {
 
   @Get('top-teams')
   async getTopTeams(@Query('limit') limit?: string) {
-    const teamLimit = limit ? parseInt(limit, 10) : 60;
+    const parsed = parseInt(limit ?? '', 10);
+    const teamLimit = Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 500) : 60;
     return this.qualificationService.getTopTeamsForQualification(teamLimit);
   }
 
   @Post('qualify')
   async qualifyTeams(@Body() body: { limit?: number }) {
-    const limit = body.limit || 60;
+    const limit = Number(body?.limit ?? 60);
     return this.qualificationService.qualifyTopTeams(limit);
   }
 }

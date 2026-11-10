@@ -380,7 +380,7 @@ class JudgesManagementPage {
     if (!row) return;
     const confirmed = await UI.confirm({
       title: 'Delete judge?',
-      message: `${row.judge.name} (${row.judge.email}) will be removed from all panels and can no longer sign in.`,
+      message: `${row.judge.name} (${row.judge.email}) will be removed from all panels, can no longer sign in, and all scores they gave will be permanently deleted.`,
       confirmText: 'Delete judge',
       danger: true,
     });

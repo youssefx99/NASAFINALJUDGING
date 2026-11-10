@@ -28,7 +28,9 @@
     "vercel-build": "npm run build",
     "benchmark": "node --env-file-if-exists=.env -r ts-node/register src/scripts/benchmark.ts",
     "load-test": "node --env-file-if-exists=.env -r ts-node/register src/scripts/load-test.ts",
-    "security-test": "node --env-file-if-exists=.env -r ts-node/register src/scripts/security-test.ts"
+    "security-test": "node --env-file-if-exists=.env -r ts-node/register src/scripts/security-test.ts",
+    "benchmark:writes": "node --env-file-if-exists=.env -r ts-node/register src/scripts/benchmark-writes.ts",
+    "test:edge": "node --env-file-if-exists=.env -r ts-node/register src/scripts/e2e-edge-cases.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

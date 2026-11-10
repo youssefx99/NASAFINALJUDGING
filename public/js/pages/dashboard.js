@@ -6,7 +6,7 @@ class DashboardPage {
         stage2: { page: 1, filter: 'all', search: '' },
     };
 
-    // Sections: stage1, stage2, then one per special panel (key "sp<panelId>")
+    // Sections: stage1, one per Stage 2 award panel ("s2<panelId>"), one per special panel ("sp<panelId>")
     static sectionHtml(key, title, accent) {
         return `
             <div class="card">
@@ -43,7 +43,7 @@ class DashboardPage {
                 <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
                     <div id="continueBanner" class="hidden"></div>
                     ${DashboardPage.sectionHtml('stage1', 'Stage 1 · Assigned Teams', 'bg-blue-600')}
-                    ${DashboardPage.sectionHtml('stage2', 'Stage 2 · Assigned Teams', 'bg-purple-600')}
+                    <div id="stage2Sections" class="space-y-6">${DashboardPage.sectionHtml('stage2', 'Stage 2 · Assigned Teams', 'bg-purple-600')}</div>
                     <div id="specialSections" class="space-y-6"></div>
                 </div>
             </div>
@@ -61,22 +61,29 @@ class DashboardPage {
     static async loadAssignedTeams() {
         try {
             const data = await UI.api('/api/judges/assigned-teams');
-            DashboardPage.teams = { stage1: data.stage1Teams || [], stage2: data.stage2Teams || [] };
-            DashboardPage.scored = {
-                stage1: new Set(data.stage1ScoredTeamIds || []),
-                stage2: new Set(data.stage2ScoredTeamIds || []),
-            };
-            DashboardPage.stage2AwardType = data.stage2AwardType;
-            DashboardPage.specialPanels = {};
-            const specialHtml = (data.specialPanels || []).map((panel) => {
-                const key = `sp${panel._id}`;
-                DashboardPage.specialPanels[key] = panel;
+            DashboardPage.teams = { stage1: data.stage1Teams || [] };
+            DashboardPage.scored = { stage1: new Set(data.stage1ScoredTeamIds || []) };
+            DashboardPage.panels = {};
+            const addPanelSection = (prefix, stage, panel, title, accent) => {
+                const key = `${prefix}${panel._id}`;
+                DashboardPage.panels[key] = { ...panel, stage };
                 DashboardPage.teams[key] = panel.teams || [];
                 DashboardPage.scored[key] = new Set(panel.scoredTeamIds || []);
                 DashboardPage.state[key] = { page: 1, filter: 'all', search: '' };
-                return DashboardPage.sectionHtml(key, `Special panel · ${UI.escape(panel.name)}`, 'bg-teal-600');
-            });
-            document.getElementById('specialSections').innerHTML = specialHtml.join('');
+                return DashboardPage.sectionHtml(key, title, accent);
+            };
+            const stage2Panels = data.stage2Panels || [];
+            if (stage2Panels.length) {
+                document.getElementById('stage2Sections').innerHTML = stage2Panels
+                    .map((panel) => addPanelSection('s2', 2, panel, `Stage 2 · ${UI.escape(panel.awardType || panel.name)}`, 'bg-purple-600'))
+                    .join('');
+            } else {
+                DashboardPage.teams.stage2 = [];
+                DashboardPage.scored.stage2 = new Set();
+            }
+            document.getElementById('specialSections').innerHTML = (data.specialPanels || [])
+                .map((panel) => addPanelSection('sp', 3, panel, `Special panel · ${UI.escape(panel.name)}`, 'bg-teal-600'))
+                .join('');
             DashboardPage.renderContinueBanner();
             Object.keys(DashboardPage.teams).forEach((key) => DashboardPage.renderStage(key));
         } catch (error) {
@@ -100,7 +107,7 @@ class DashboardPage {
             ? `
             <div class="card flex flex-col gap-4 bg-gradient-to-r from-slate-900 to-blue-900 p-5 text-white sm:flex-row sm:items-center">
                 <div class="min-w-0 flex-1">
-                    <p class="text-sm text-blue-200">Next team to score · ${next.key === 'stage1' ? 'Stage 1' : next.key === 'stage2' ? 'Stage 2' : UI.escape(DashboardPage.specialPanels[next.key].name)}</p>
+                    <p class="text-sm text-blue-200">Next team to score · ${DashboardPage.sectionLabel(next.key)}</p>
                     <p class="truncate text-lg font-semibold">${UI.escape(next.team.name)}</p>
                     <p class="truncate text-sm text-blue-100">${UI.escape(next.team.challenge)}</p>
                 </div>
@@ -116,9 +123,16 @@ class DashboardPage {
             </div>`;
     }
 
+    static sectionLabel(key) {
+        const panel = DashboardPage.panels?.[key];
+        if (!panel) return 'Stage 1';
+        return panel.stage === 2 ? `Stage 2 · ${UI.escape(panel.awardType || panel.name)}` : UI.escape(panel.name);
+    }
+
     static teamLink(key, teamId) {
-        const special = DashboardPage.specialPanels?.[key];
-        return special ? `/special/${special._id}/${teamId}` : `/${key}/${teamId}`;
+        const panel = DashboardPage.panels?.[key];
+        if (!panel) return `/stage1/${teamId}`;
+        return panel.stage === 2 ? `/stage2/${panel._id}/${teamId}` : `/special/${panel._id}/${teamId}`;
     }
 
     static renderStage(key) {
@@ -126,15 +140,15 @@ class DashboardPage {
         const teams = DashboardPage.teams[key];
         const scored = DashboardPage.scored[key];
         const state = DashboardPage.state[key];
-        const stage = key === 'stage1' ? 1 : key === 'stage2' ? 2 : 3;
+        const stage = key === 'stage1' ? 1 : key === 'stage2' ? 2 : DashboardPage.panels[key].stage;
 
         const scoredCount = teams.filter((team) => scored.has(team._id)).length;
         const percent = teams.length ? Math.round((scoredCount / teams.length) * 100) : 0;
         document.getElementById(`${key}Progress`).textContent = `${scoredCount} / ${teams.length} scored`;
         document.getElementById(`${key}ProgressBar`).style.width = `${percent}%`;
         document.getElementById(`${key}Subtitle`).innerHTML =
-            key === 'stage2' && DashboardPage.stage2AwardType
-                ? `Award category: <span class="font-medium text-purple-700">${UI.escape(DashboardPage.stage2AwardType)}</span>`
+            stage === 2 && DashboardPage.panels[key]
+                ? `Award category: <span class="font-medium text-purple-700">${UI.escape(DashboardPage.panels[key].awardType || DashboardPage.panels[key].name)}</span> · ${teams.length - scoredCount} remaining`
                 : `${teams.length - scoredCount} remaining${stage === 3 ? ' · rate each question 1–5' : ''}`;
 
         const list = document.getElementById(`${key}List`);

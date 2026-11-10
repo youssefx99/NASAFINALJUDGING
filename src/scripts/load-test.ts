@@ -67,41 +67,36 @@ async function judgeLoop(email: string, deadline: number) {
       await sleep(500);
       continue;
     }
-    const stage = assigned.stage2Teams.length && Math.random() < 0.3 ? 2 : 1;
-    const team = pick(stage === 1 ? assigned.stage1Teams : assigned.stage2Teams) as any;
+    // Stage 1 most of the time, otherwise one of the judge's Stage 2 award panels or special panels
+    const panels = [...(assigned.stage2Panels || []).map((p: any) => ({ ...p, stage: 2 })), ...(assigned.specialPanels || []).map((p: any) => ({ ...p, stage: 3 }))];
+    const panel: any = panels.length && Math.random() < 0.3 ? pick(panels) : null;
+    const stage = panel ? panel.stage : 1;
+    const team = pick(panel ? panel.teams : assigned.stage1Teams) as any;
     if (!team) {
       await sleep(1000);
       continue;
     }
     // Scoring page loads these in parallel
     const [criteria] = await Promise.all([
-      call(`GET /api/stages/Stage ${stage}`, `/api/stages/Stage%20${stage}`, token),
+      call(`GET /api/stages/Stage ${stage === 1 ? 1 : 2}`, `/api/stages/Stage%20${stage === 1 ? 1 : 2}`, token),
       call('GET /api/teams/:id', `/api/teams/${team._id}`, token),
       call('GET /api/judges/assigned-teams', '/api/judges/assigned-teams', token),
-      call('GET /api/scores/judge/:id/team/:id/stage/:n', `/api/scores/judge/${judgeId}/team/${team._id}/stage/${stage}`, token),
+      call('GET /api/scores/judge/:id/team/:id/stage/:n', `/api/scores/judge/${judgeId}/team/${team._id}/stage/${stage}${panel ? `?panel=${panel._id}` : ''}`, token),
     ]);
     if (THINK_MS) await sleep(THINK_MS);
     if (stage === 1 && criteria) {
       const scores: Record<string, number[]> = {};
-      const criteriaScores: Record<string, number> = {};
-      let total = 0;
-      let max = 0;
-      for (const c of criteria.criteria) {
-        scores[c.name] = c.questions.map(() => (Math.random() < 0.6 ? 1 : 0));
-        criteriaScores[c.name] = scores[c.name].reduce((a, b) => a + b, 0);
-        total += criteriaScores[c.name] * c.weight;
-        max += c.questions.length * c.weight;
+      for (const c of criteria.criteria) scores[c.name] = c.questions.map(() => (Math.random() < 0.6 ? 1 : 0));
+      await call('POST /api/scores', '/api/scores', token, { teamId: team._id, stage: 1, scores });
+    } else if (stage === 2 && criteria) {
+      const award = criteria.criteria.find((c: any) => c.name === panel.awardType);
+      if (award) {
+        const values = award.questions.map(() => 1 + Math.floor(Math.random() * 5));
+        await call('POST /api/scores', '/api/scores', token, { teamId: team._id, stage: 2, panelId: panel._id, scores: { [panel.awardType]: values } });
       }
-      await call('POST /api/scores', '/api/scores', token, { teamId: team._id, stage: 1, scores, criteriaScores, totalScore: max ? (total / max) * 5 : 0 });
-    } else if (stage === 2) {
-      const values = [0, 1, 2].map(() => 1 + Math.floor(Math.random() * 5));
-      await call('POST /api/scores', '/api/scores', token, {
-        teamId: team._id,
-        stage: 2,
-        scores: { [assigned.stage2AwardType]: values },
-        totalScore: values.reduce((a, b) => a + b, 0) / values.length,
-        awardType: assigned.stage2AwardType,
-      });
+    } else if (stage === 3) {
+      const values = panel.questions.map(() => 1 + Math.floor(Math.random() * 5));
+      await call('POST /api/scores', '/api/scores', token, { teamId: team._id, stage: 3, panelId: panel._id, scores: { [panel._id]: values } });
     }
     if (THINK_MS) await sleep(THINK_MS);
   }

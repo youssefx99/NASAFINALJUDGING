@@ -24,6 +24,7 @@ class App {
     router.addRoute('/dashboard', DashboardPage);
     router.addRoute('/stage1/:teamId', Stage1TeamDetailPage);
     router.addRoute('/stage2/:teamId', Stage2TeamDetailPage);
+    router.addRoute('/stage2/:panelId/:teamId', Stage2TeamDetailPage);
     router.addRoute('/special/:panelId/:teamId', Stage2TeamDetailPage);
 
     // Start the router

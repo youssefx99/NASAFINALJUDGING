@@ -33,6 +33,6 @@ export class Score {
 }
 
 export const ScoreSchema = SchemaFactory.createForClass(Score);
-ScoreSchema.index({ judge: 1, team: 1, stage: 1, panel: 1 }, { unique: true });
+ScoreSchema.index({ judge: 1, team: 1, stage: 1, panel: 1, awardType: 1 }, { unique: true });
 ScoreSchema.index({ team: 1, stage: 1 });
 ScoreSchema.index({ stage: 1, awardType: 1, team: 1 });

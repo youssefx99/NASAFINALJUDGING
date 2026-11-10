@@ -25,7 +25,7 @@ export class JudgesService {
         .lean()
         .exec(),
       this.scoreModel
-        .find({ judge: judgeId }, { team: 1, stage: 1, panel: 1 })
+        .find({ judge: judgeId }, { team: 1, stage: 1, panel: 1, awardType: 1 })
         .lean()
         .exec(),
     ]);
@@ -33,53 +33,49 @@ export class JudgesService {
       throw new Error('Judge not found');
     }
 
-    // Separate panels by stage
-    const stage1TeamIds: any[] = [];
-    const stage2TeamIds: any[] = [];
-    let stage2AwardType: string | undefined;
-
-    for (const panel of assignedPanels) {
-      if (panel.stage === 1) {
-        stage1TeamIds.push(...(panel.teams || []));
-      } else if (panel.stage === 2) {
-        stage2TeamIds.push(...(panel.teams || []));
-        stage2AwardType = panel.awardType; // Added: Get award type for Stage 2
-      }
-    }
+    // Stage 1 teams are pooled across the judge's panels; Stage 2 and special panels are listed per panel
+    const stage1TeamIds = assignedPanels
+      .filter((panel) => panel.stage === 1)
+      .flatMap((panel) => panel.teams || []);
+    const stage2Panels = assignedPanels.filter((panel) => panel.stage === 2);
+    const stage2TeamIds = stage2Panels.flatMap((panel) => panel.teams || []);
 
     const specialPanels = assignedPanels.filter((panel) => panel.stage === 3);
     const specialTeamIds = specialPanels.flatMap((panel) => panel.teams || []);
 
-    const [stage1TeamsDetails, stage2TeamsDetails, specialTeamsDetails] = await Promise.all([
+    const [stage1TeamsDetails, panelTeamsDetails] = await Promise.all([
       stage1TeamIds.length > 0
         ? this.teamModel.find({ _id: { $in: stage1TeamIds } }).lean().exec()
         : [],
-      stage2TeamIds.length > 0
-        ? this.teamModel.find({ _id: { $in: stage2TeamIds } }).lean().exec()
-        : [],
-      specialTeamIds.length > 0
-        ? this.teamModel.find({ _id: { $in: specialTeamIds } }).lean().exec()
+      stage2TeamIds.length + specialTeamIds.length > 0
+        ? this.teamModel.find({ _id: { $in: [...stage2TeamIds, ...specialTeamIds] } }).lean().exec()
         : [],
     ]);
-    const specialTeamsById = new Map<string, unknown>(
-      (specialTeamsDetails as any[]).map((team) => [String(team._id), team]),
+    const teamsById = new Map<string, unknown>(
+      (panelTeamsDetails as any[]).map((team) => [String(team._id), team]),
     );
+    const panelTeams = (panel: any) =>
+      (panel.teams || []).map((id) => teamsById.get(String(id))).filter(Boolean);
 
     return {
       stage1Teams: stage1TeamsDetails,
-      stage2Teams: stage2TeamsDetails,
-      stage2AwardType: stage2AwardType, // Added: Return award type
       stage1ScoredTeamIds: scores
         .filter((score) => score.stage === 1)
         .map((score) => String(score.team)),
-      stage2ScoredTeamIds: scores
-        .filter((score) => score.stage === 2)
-        .map((score) => String(score.team)),
+      stage2Panels: stage2Panels.map((panel) => ({
+        _id: String(panel._id),
+        name: panel.name,
+        awardType: panel.awardType,
+        teams: panelTeams(panel),
+        scoredTeamIds: scores
+          .filter((score) => score.stage === 2 && score.awardType === panel.awardType)
+          .map((score) => String(score.team)),
+      })),
       specialPanels: specialPanels.map((panel) => ({
         _id: String(panel._id),
         name: panel.name,
         questions: (panel.awardCriteria || []).map((q) => ({ question: q.question, descriptions: q.descriptions })),
-        teams: (panel.teams || []).map((id) => specialTeamsById.get(String(id))).filter(Boolean),
+        teams: panelTeams(panel),
         scoredTeamIds: scores
           .filter((score) => score.stage === 3 && String(score.panel) === String(panel._id))
           .map((score) => String(score.team)),
