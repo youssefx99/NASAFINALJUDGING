@@ -47,7 +47,7 @@ class Stage1TeamDetailPage {
       results = await Promise.all([
         UI.api('/api/stages/Stage%201'),
         UI.api(`/api/teams/${encodeURIComponent(teamId)}`),
-        UI.api('/api/judges/assigned-teams').catch(() => null),
+        UI.api('/api/judges/assigned-teams'),
         UI.api(`/api/scores/judge/${encodeURIComponent(judgeId)}/team/${encodeURIComponent(teamId)}/stage/1`).catch((error) => {
           scoreError = error;
           return null;
@@ -60,22 +60,29 @@ class Stage1TeamDetailPage {
     if (!root()) return;
 
     const [stage, team, assigned, score] = results;
+    const assignedTeam = (assigned.stage1Teams || []).find((t) => t._id === team._id);
+    if (!assignedTeam) {
+      root().innerHTML = this.renderError('This team is not in your Stage 1 panels.');
+      return;
+    }
     const saved = score && score.scores ? score.scores : null;
-    const criteria = (stage.criteria || []).map((c) => ({
+    // Only the criteria selected for this team's panel (null = all Stage 1 criteria)
+    const criteriaIds = assignedTeam.criteriaIds;
+    const criteria = (stage.criteria || []).filter((c) => !criteriaIds || criteriaIds.includes(c._id)).map((c) => ({
       name: c.name,
       weight: c.weight,
       questions: Array.isArray(c.questions)
         ? c.questions
         : Array.from({ length: c.questions || 0 }, (_, i) => `Question ${i + 1}`),
     }));
-    const scoredIds = new Set(assigned?.stage1ScoredTeamIds || []);
+    const scoredIds = new Set(assigned.stage1ScoredTeamIds || []);
     if (saved) scoredIds.add(team._id);
 
     this.state = {
       team,
       criteria,
       scoredIds,
-      teams: assigned?.stage1Teams || [],
+      teams: assigned.stage1Teams || [],
       answers: criteria.map((c) =>
         c.questions.map((_, qi) => {
           const value = saved?.[c.name]?.[qi];
@@ -363,7 +370,8 @@ class Stage1TeamDetailPage {
     }
 
     root.querySelectorAll('[data-submit]').forEach((btn) => {
-      btn.disabled = s.saving || !count;
+      btn.disabled = s.saving || !count || answered < count;
+      btn.title = answered < count ? 'Answer every question to submit' : '';
       btn.innerHTML = s.saving ? `${this.icons.spinner} Saving…` : scored ? 'Update score' : 'Submit score';
     });
     root.querySelectorAll('[data-next]').forEach((btn) => {
@@ -374,7 +382,9 @@ class Stage1TeamDetailPage {
       btn.innerHTML = next ? `Next team ${this.icons.arrow}` : 'Finish';
     });
     document.getElementById('s1UpNext').textContent = !scored
-      ? 'Submit your score to continue'
+      ? answered < count
+        ? `Answer all questions to submit (${count - answered} left)`
+        : 'Submit your score to continue'
       : next
         ? `Up next: ${next.name}`
         : 'All teams scored';
@@ -410,7 +420,23 @@ class Stage1TeamDetailPage {
         el.className = `${this.timerBase} ${tone}`;
         el.querySelector('[data-timer-text]').textContent = text;
       });
-      if (left === 0) UI.toast("Time's up. Please submit your score.", 'warning', 6000);
+      if (left === 0) {
+        // Time's up: unanswered questions count as "No" and the score is sent automatically
+        const s = this.state;
+        if (s && !s.saving && s.criteria.length && (s.dirty || !s.scoredIds.has(s.team._id))) {
+          s.answers.forEach((row, ci) =>
+            row.forEach((v, qi) => {
+              if (v !== null) return;
+              row[qi] = 0;
+              document.querySelector(`input[name="s1_${ci}_${qi}"][value="0"]`).checked = true;
+            }),
+          );
+          UI.toast("Time's up. Unanswered questions were marked No and your score is being submitted.", 'warning', 6000);
+          this.submitScore();
+        } else {
+          UI.toast("Time's up.", 'warning', 6000);
+        }
+      }
     };
     window.stage1RefreshInterval = setInterval(tick, 1000);
     tick();
@@ -433,13 +459,8 @@ class Stage1TeamDetailPage {
     if (missing.length) {
       missing.forEach((key) => document.getElementById(`s1q_${key}`).classList.add(...this.highlight));
       document.getElementById(`s1q_${missing[0]}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const proceed = await UI.confirm({
-        title: `${missing.length} unanswered question${missing.length === 1 ? '' : 's'}`,
-        message: 'Unanswered questions are counted as "No". Submit anyway?',
-        confirmText: 'Submit anyway',
-        cancelText: 'Keep scoring',
-      });
-      if (!proceed || this.state !== s) return;
+      UI.toast(`Please answer all questions before submitting (${missing.length} left).`, 'warning');
+      return;
     }
 
     const scores = {};
@@ -462,12 +483,6 @@ class Stage1TeamDetailPage {
         },
       });
       if (this.state !== s) return;
-      missing.forEach((key) => {
-        const [ci, qi] = key.split('_').map(Number);
-        s.answers[ci][qi] = 0;
-        document.querySelector(`input[name="s1_${key}"][value="0"]`).checked = true;
-        document.getElementById(`s1q_${key}`).classList.remove(...this.highlight);
-      });
       s.scoredIds.add(s.team._id);
       s.dirty = false;
       const next = this.nextTeam();

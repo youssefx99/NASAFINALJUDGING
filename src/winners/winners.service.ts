@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Panel, PanelDocument } from '../schemas/panel.schema';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 import { Team, TeamDocument } from '../schemas/team.schema';
+import { StagesService } from '../stages/stages.service';
 
 export interface Winner {
   awardType: string;
@@ -47,11 +48,12 @@ export class WinnersService {
     @InjectModel(Score.name) private scoreModel: Model<ScoreDocument>,
     @InjectModel(Team.name) private teamModel: Model<TeamDocument>,
     @InjectModel(Panel.name) private panelModel: Model<PanelDocument>,
+    private readonly stagesService: StagesService,
   ) {}
 
   /**
    * Get the winner for each award panel
-   * NEW LOGIC: Uses final scores (Stage 1 60% + Stage 2 40%) ranking
+   * Uses the final score ranking (weighted Stage 1 + best Stage 2 award)
    * First team encountered for each award type wins that award
    */
   async getWinnersByAward(): Promise<Winner[]> {
@@ -103,23 +105,9 @@ export class WinnersService {
    * Special panels follow as extra categories, ranked by their own average score.
    */
   async getLeaderboard(finalistCount = 4) {
-    const [teamFinalScores, specialPanels, specialAverages] = await Promise.all([
+    const [teamFinalScores, specialPanels] = await Promise.all([
       this.rankTeamsByBestAward(),
-      this.panelModel.find({ stage: 3 }, { name: 1 }).sort({ createdAt: 1 }).lean().exec(),
-      this.scoreModel
-        .aggregate([
-          { $match: { stage: 3 } },
-          {
-            $group: {
-              _id: { panel: '$panel', team: '$team' },
-              averageScore: { $avg: '$totalScore' },
-              judgeCount: { $sum: 1 },
-            },
-          },
-          { $lookup: { from: 'teams', localField: '_id.team', foreignField: '_id', as: 'team', pipeline: [{ $project: { name: 1, challenge: 1 } }] } },
-          { $unwind: '$team' },
-        ])
-        .exec(),
+      this.rankSpecialPanels(),
     ]);
     const toEntry = (id: string, awardType: string, teams: Array<{ _id: string; name: string; challenge: string }>, special: boolean) => ({
       id,
@@ -142,23 +130,62 @@ export class WinnersService {
       return toEntry(awardType, awardType, teams, false);
     });
 
-    const special = specialPanels.map((panel) => {
-      const teams = specialAverages
-        .filter((record) => String(record._id.panel) === String(panel._id))
-        .sort((a, b) => b.averageScore - a.averageScore || b.judgeCount - a.judgeCount || a.team.name.localeCompare(b.team.name))
-        .map((record) => ({ _id: String(record.team._id), name: record.team.name, challenge: record.team.challenge }));
-      return toEntry(`special:${panel._id}`, panel.name, teams, true);
-    });
+    const special = specialPanels.map(({ panel, teams }) =>
+      toEntry(`special:${panel._id}`, panel.name, teams.map(({ _id, name, challenge }) => ({ _id, name, challenge })), true),
+    );
 
     return [...regular, ...special];
   }
 
+  // Special panel winner = the team with the highest average in that panel
+  async getSpecialWinners() {
+    return (await this.rankSpecialPanels()).map(({ panel, teams }) => ({
+      panelId: String(panel._id),
+      name: panel.name,
+      winnerTeam: teams[0] || null,
+    }));
+  }
+
+  // Special panels (creation order), each with its scored teams by average score; more judges, then name, break ties
+  private async rankSpecialPanels() {
+    const [specialPanels, specialAverages] = await Promise.all([
+      this.panelModel.find({ stage: 3 }, { name: 1 }).sort({ createdAt: 1 }).lean().exec(),
+      this.scoreModel
+        .aggregate([
+          { $match: { stage: 3 } },
+          {
+            $group: {
+              _id: { panel: '$panel', team: '$team' },
+              averageScore: { $avg: '$totalScore' },
+              judgeCount: { $sum: 1 },
+            },
+          },
+          { $lookup: { from: 'teams', localField: '_id.team', foreignField: '_id', as: 'team', pipeline: [{ $project: { name: 1, challenge: 1 } }] } },
+          { $unwind: '$team' },
+        ])
+        .exec(),
+    ]);
+    return specialPanels.map((panel) => ({
+      panel,
+      teams: specialAverages
+        .filter((record) => String(record._id.panel) === String(panel._id))
+        .sort((a, b) => b.averageScore - a.averageScore || b.judgeCount - a.judgeCount || a.team.name.localeCompare(b.team.name))
+        .map((record) => ({
+          _id: String(record.team._id),
+          name: record.team.name as string,
+          challenge: record.team.challenge as string,
+          averageScore: record.averageScore as number,
+          judgeCount: record.judgeCount as number,
+        })),
+    }));
+  }
+
   /**
    * Teams with Stage 2 award scores, each with its best award and final score
-   * (Stage 1 60% + best Stage 2 award 40%), sorted by final score (highest first)
+   * (weighted Stage 1 + best Stage 2 award), sorted by final score (highest first)
    */
   private async rankTeamsByBestAward() {
-    const [stage1Averages, awardAverages] = await Promise.all([
+    const [stage1Averages, awardAverages, weights] = await Promise.all([
       this.scoreModel
         .aggregate([
           { $match: { stage: 1 } },
@@ -180,6 +207,7 @@ export class WinnersService {
           { $sort: { firstScore: 1 } },
         ])
         .exec(),
+      this.stagesService.getFinalWeights(),
     ]);
 
     const stage1ByTeam = new Map(
@@ -217,7 +245,6 @@ export class WinnersService {
       judgeCount: number;
     }> = teams.map((team) => {
       const best = bestAwardByTeam.get(String(team._id))!;
-      // Calculate final score (60% Stage 1 + 40% Stage 2 best)
       const stage1Percent = ((stage1ByTeam.get(String(team._id)) || 0) / 5) * 100;
       const stage2Percent = (best.average / 5) * 100;
       return {
@@ -225,7 +252,7 @@ export class WinnersService {
         stage1Score: stage1Percent,
         stage2BestScore: stage2Percent,
         stage2BestAward: best.award,
-        finalScore: stage1Percent * 0.6 + stage2Percent * 0.4,
+        finalScore: stage1Percent * weights.stage1 + stage2Percent * weights.stage2,
         judgeCount: best.judgeCount,
       };
     });

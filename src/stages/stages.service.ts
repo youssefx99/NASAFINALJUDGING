@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Stage, StageDocument } from '../schemas/stage.schema';
@@ -23,6 +23,21 @@ export class StagesService {
       .exec();
 
     return stage;
+  }
+
+  async getFinalWeights(): Promise<{ stage1: number; stage2: number }> {
+    const stage1 = await this.stageModel.findOne({ name: 'Stage 1' }, { finalWeight: 1 }).lean().exec();
+    const weight = stage1?.finalWeight ?? 0.6;
+    // Rounded so Stage 2 reads 0.45, not 0.44999999999999996
+    return { stage1: weight, stage2: Math.round((1 - weight) * 1e12) / 1e12 };
+  }
+
+  async setFinalWeights(stage1: unknown) {
+    if (typeof stage1 !== 'number' || !(stage1 >= 0 && stage1 <= 1)) {
+      throw new BadRequestException('Stage 1 weight must be a number between 0 and 1');
+    }
+    await this.stageModel.updateOne({ name: 'Stage 1' }, { finalWeight: stage1 }, { upsert: true }).exec();
+    return this.getFinalWeights();
   }
 
   async getAwardCriteria(awardType: string) {

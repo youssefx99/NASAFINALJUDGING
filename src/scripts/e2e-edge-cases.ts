@@ -85,6 +85,9 @@ async function main() {
   const sp = (await api('POST', '/api/panels', admin, { name: `${tag} Special`, stage: 3, judges: [j1._id], teams: [team('Delta')._id, team('فريق عربي')._id], awardCriteria: [{ question: 'Q1' }, { question: 'Q2' }] })).json;
   const spEmpty = (await api('POST', '/api/panels', admin, { name: `${tag} No questions`, stage: 3, judges: [j1._id], teams: [team('Eps')._id], awardCriteria: [] })).json;
 
+  let j4: any;
+  let originalWeight: number | undefined;
+  const criteriaPanels: any[] = [];
   try {
     // ---------- Assignments ----------
     const a1 = (await api('GET', '/api/judges/assigned-teams', t1)).json;
@@ -232,6 +235,106 @@ async function main() {
     const afterDelete = ((await api('GET', `/api/scores/team/${team('Gamma')._id}/stage/1`, admin)).json as any[]).length;
     check('deleting a judge removes their scores (no hidden scores in rankings)', afterDelete === beforeDelete - 1, `${beforeDelete} -> ${afterDelete}`);
 
+    // ---------- Stage 1 panels score only their selected criteria ----------
+    const [c0, c1, c2] = stage1.criteria;
+    j4 = await createJudge('E2E Criteria', `${tag}.criteria@example.com`);
+    const t4 = await login(`${tag}.criteria@example.com`, password);
+    const newPanel = async (name: string, teamIds: string[], criteria: string[]) =>
+      (await api('POST', '/api/panels', admin, { name: `${tag} ${name}`, stage: 1, judges: [j4._id], teams: teamIds, criteria })).json;
+    const pcA = await newPanel('Crit A', [team('Eps')._id, team('Gamma')._id], [c0._id, c2._id]);
+    const pcB = await newPanel('Crit B', [team('Gamma')._id, team('Delta')._id], [c1._id]);
+    const pcC = await newPanel('Crit C', [team('Delta')._id], []);
+    const pcD = await newPanel('Crit D', [team('فريق عربي')._id], ['000000000000000000000000']);
+    criteriaPanels.push(pcA, pcB, pcC, pcD);
+    const sameIds = (a: string[] | null, b: string[] | null) => (a === null || b === null ? a === b : a.length === b.length && b.every((id) => a.includes(id)));
+    const a4 = (await api('GET', '/api/judges/assigned-teams', t4)).json;
+    const idsFor = (name: string) => a4.stage1Teams.find((t: any) => t._id === team(name)._id)?.criteriaIds;
+    check('criteria: panel selection is sent to the judge per team', sameIds(idsFor('Eps'), [c0._id, c2._id]), JSON.stringify(idsFor('Eps')));
+    check('criteria: team in two panels gets the union of both selections', sameIds(idsFor('Gamma'), [c0._id, c1._id, c2._id]), JSON.stringify(idsFor('Gamma')));
+    check('criteria: a panel without a selection means all criteria', idsFor('Delta') === null, JSON.stringify(idsFor('Delta')));
+    const yes = (c: any) => c.questions.map(() => 1);
+    const no = (c: any) => c.questions.map(() => 0);
+    r = await api('POST', '/api/scores', t4, { teamId: team('Eps')._id, stage: 1, scores: { [c0.name]: yes(c0), [c2.name]: no(c2) } });
+    const expected = ((c0.questions.length * c0.weight) / (c0.questions.length * c0.weight + c2.questions.length * c2.weight)) * 5;
+    check('criteria: score uses only the selected criteria (weights renormalized to /5)', r.status === 201 && Math.abs(r.json.totalScore - expected) < 1e-9 && sameIds(Object.keys(r.json.scores), [c0.name, c2.name]), `${r.status} ${r.json?.totalScore} vs ${expected}`);
+    r = await api('POST', '/api/scores', t4, { teamId: team('Eps')._id, stage: 1, scores: { [c0.name]: yes(c0) } });
+    check('criteria: missing a selected criterion rejected (400)', r.status === 400, `got ${r.status}`);
+    r = await api('POST', '/api/scores', t4, { teamId: team('Eps')._id, stage: 1, scores: allYes });
+    check('criteria: answers for unselected criteria are not stored', r.status === 201 && r.json.totalScore === 5 && sameIds(Object.keys(r.json.scores), [c0.name, c2.name]));
+    r = await api('POST', '/api/scores', t4, { teamId: team('Gamma')._id, stage: 1, scores: allNo });
+    check('criteria: union of two panels is scored together', r.status === 201 && r.json.totalScore === 0 && sameIds(Object.keys(r.json.scores), [c0.name, c1.name, c2.name]));
+    r = await api('POST', '/api/scores', t4, { teamId: team('Delta')._id, stage: 1, scores: allYes });
+    check('criteria: all-criteria panel stores every criterion', r.status === 201 && sameIds(Object.keys(r.json.scores), stage1.criteria.map((c: any) => c.name)));
+    r = await api('POST', '/api/scores', t4, { teamId: team('فريق عربي')._id, stage: 1, scores: allYes });
+    check('criteria: panel whose criteria were all deleted refuses scoring (400)', r.status === 400 && /No Stage 1 criteria/.test(r.json?.message || ''), `${r.status} ${r.json?.message}`);
+    r = await api('POST', '/api/panels', admin, { name: `${tag} bad crit`, stage: 1, judges: [], teams: [], criteria: ['abc'] });
+    check('criteria: invalid criterion id rejected (400)', r.status === 400, `got ${r.status}`);
+    await api('PUT', `/api/panels/${pcA._id}`, admin, { name: pcA.name, stage: 1, judges: [j4._id], teams: [team('Eps')._id, team('Gamma')._id], criteria: [c1._id] });
+    const pcAAfter = (await api('GET', `/api/panels/${pcA._id}`, admin)).json;
+    const a4b = (await api('GET', '/api/judges/assigned-teams', t4)).json;
+    check('criteria: editing the panel updates the selection', sameIds(pcAAfter.criteria, [c1._id]) && sameIds(a4b.stage1Teams.find((t: any) => t._id === team('Eps')._id)?.criteriaIds, [c1._id]));
+
+    // ---------- Final score weights ----------
+    const weights = (await api('GET', '/api/stages/final-weights', admin)).json;
+    originalWeight = weights.stage1;
+    check('weights: GET returns Stage 1 + Stage 2 = 100%', Math.abs(weights.stage1 + weights.stage2 - 1) < 1e-12 && weights.stage1 >= 0 && weights.stage1 <= 1, JSON.stringify(weights));
+    for (const bad of [-0.1, 1.01, '0.5', null, true, undefined]) {
+      r = await api('PUT', '/api/stages/final-weights', admin, bad === undefined ? {} : { stage1: bad });
+      check(`weights: invalid ${JSON.stringify(bad)} rejected (400)`, r.status === 400, `got ${r.status}`);
+    }
+    check('weights: judges cannot read or change them (403)', (await api('GET', '/api/stages/final-weights', t1)).status === 403 && (await api('PUT', '/api/stages/final-weights', t1, { stage1: 0.5 })).status === 403);
+    const final = async () => (await api('GET', '/api/scores/top?stage=final&limit=100000', admin)).json as any[];
+    for (const weight of [0.7, 1, 0, 0.25]) {
+      r = await api('PUT', '/api/stages/final-weights', admin, { stage1: weight });
+      check(`weights: set Stage 1 to ${weight * 100}%`, r.status === 200 && r.json.stage1 === weight && Math.abs(r.json.stage2 - (1 - weight)) < 1e-12, JSON.stringify(r.json));
+      const ranking = await final();
+      const wrong = ranking.filter((t) => Math.abs(t.finalScore - (weight * t.stage1Score + (1 - weight) * t.stage2BestScore)) > 1e-9);
+      const sorted = ranking.every((t, i) => i === 0 || !t.hasAnyScore || ranking[i - 1].finalScore >= t.finalScore - 1e-12);
+      check(`weights ${weight * 100}/${100 - weight * 100}: every final score and the ranking order are correct`, wrong.length === 0 && sorted, `${wrong.length} wrong`);
+
+      // Independent recomputation from the raw scores (the server's best award is only trusted for exact ties)
+      const exported = (await api('GET', '/api/export', admin)).json;
+      const avg = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+      const group = (rows: any[], key: (s: any) => string) => rows.reduce((m, s) => m.set(key(s), [...(m.get(key(s)) || []), s.totalScore]), new Map<string, number[]>());
+      const s1 = group(exported.scores.filter((s: any) => s.stage === 1), (s) => s.team);
+      const s2 = group(exported.scores.filter((s: any) => s.stage === 2 && s.awardType), (s) => `${s.team}|${s.awardType}`);
+      const maxAvg = new Map<string, number>();
+      for (const [key, values] of s2) maxAvg.set(key.split('|')[0], Math.max(maxAvg.get(key.split('|')[0]) ?? 0, avg(values)));
+      const badRows = ranking.filter((t) => Math.abs(t.stage1Score - (s1.has(t._id) ? avg(s1.get(t._id)!) : 0)) > 1e-9 || Math.abs(t.stage2BestScore - (maxAvg.get(t._id) ?? 0)) > 1e-9);
+      const bestAward = new Map(ranking.filter((t) => t.hasStage2Score).map((t) => [t._id as string, t.bestAward as string]));
+      const badBest = [...bestAward].filter(([id, award]) => !s2.has(`${id}|${award}`) || Math.abs(avg(s2.get(`${id}|${award}`)!) - maxAvg.get(id)!) > 1e-12);
+      check(`weights ${weight * 100}/${100 - weight * 100}: Stage 1 averages and best awards match the raw scores`, badRows.length === 0 && badBest.length === 0, `${badRows.length} rows, ${badBest.length} best awards`);
+      const finalPct = (id: string) => ((s1.has(id) ? avg(s1.get(id)!) : 0) / 5) * 100 * weight + (maxAvg.get(id)! / 5) * 100 * (1 - weight);
+      const winners = (await api('GET', '/api/winners', admin)).json.data as any[];
+      const badWinners = winners.filter((w) => {
+        const top = Math.max(...[...bestAward].filter(([, award]) => award === w.awardType).map(([id]) => finalPct(id)));
+        return bestAward.get(w.winnerTeam._id) !== w.awardType || Math.abs(w.finalScore - finalPct(w.winnerTeam._id)) > 1e-9 || Math.abs(top - w.finalScore) > 1e-9;
+      });
+      check(`weights ${weight * 100}/${100 - weight * 100}: award winners match an independent recomputation`, winners.length > 0 && winners.length === new Set(bestAward.values()).size && badWinners.length === 0, badWinners.map((w) => w.awardType).join(', '));
+    }
+
+    // ---------- Special panel winners ----------
+    const special = (await api('GET', '/api/winners/special', admin)).json.data as any[];
+    const spWinner = special.find((p) => p.panelId === sp._id);
+    check('special winners: highest average wins, with its score and judges', spWinner?.winnerTeam?.name === team('فريق عربي').name && spWinner.winnerTeam.averageScore === 4.5 && spWinner.winnerTeam.judgeCount === 1, JSON.stringify(spWinner));
+    check('special winners: panel without scores has no winner', special.find((p) => p.panelId === spEmpty._id)?.winnerTeam === null);
+    check('special winners: judges refused (403)', (await api('GET', '/api/winners/special', t1)).status === 403);
+
+    // ---------- Excel export data ----------
+    const exportRes = await fetch(`${BASE}/api/export`, { headers: { Authorization: `Bearer ${admin}`, 'Accept-Encoding': 'gzip' } });
+    const exportData = await exportRes.json();
+    check('export: sent gzip-compressed', exportRes.status === 200 && exportRes.headers.get('content-encoding') === 'gzip', `${exportRes.status} ${exportRes.headers.get('content-encoding')}`);
+    const plain = await fetch(`${BASE}/api/export`, { headers: { Authorization: `Bearer ${admin}`, 'Accept-Encoding': 'identity' } });
+    check('export: plain JSON when gzip is not accepted', plain.status === 200 && !plain.headers.get('content-encoding') && Array.isArray((await plain.json()).teams));
+    const allTeams = (await api('GET', '/api/teams', admin)).json as any[];
+    const allJudges = (await api('GET', '/api/users/judges', admin)).json as any[];
+    const scoreCount = (await Promise.all(allJudges.map(async (j) => ((await api('GET', `/api/scores/judge/${j._id}`, admin)).json as any[]).length))).reduce((a, b) => a + b, 0);
+    check('export: every team, judge and panel included', exportData.teams.length === allTeams.length && exportData.judges.length === allJudges.length && exportData.panels.length === ((await api('GET', '/api/panels', admin)).json as any[]).length);
+    check('export: every score included with its answers', exportData.scores.length === scoreCount && exportData.scores.every((s: any) => s.team && s.judge && typeof s.totalScore === 'number' && s.scores));
+    check('export: no password hashes or login data', !JSON.stringify(exportData).match(/passwordHash|failedLoginAttempts|lockUntil/));
+    check('export: final ranking identical to the dashboard', JSON.stringify(exportData.finalRanking) === JSON.stringify(await final()));
+    check('export: judges refused (403)', (await api('GET', '/api/export', t1)).status === 403);
+
     // ---------- Read endpoints stay consistent ----------
     for (const path of ['/api/scores/overview', '/api/scores/top?stage=final&limit=1000', '/api/stage2-qualification/stats', '/api/winners/award-status', '/api/winners/leaderboard', '/api/panels', '/api/teams', '/api/users/judges']) {
       const res = await api('GET', path, admin);
@@ -242,8 +345,9 @@ async function main() {
     for (const [i, panel] of awardPanels.entries()) {
       await api('PUT', `/api/panels/${panel._id}`, admin, { name: panel.name, stage: 2, awardType: panel.awardType, judges: awardPanelsBefore[i].judges, teams: awardPanelsBefore[i].teams });
     }
-    for (const panel of [p1, p1b, sp, spEmpty]) if (panel?._id) await api('DELETE', `/api/panels/${panel._id}`, admin);
-    for (const judge of [j1, j2, j3]) if (judge?._id) await api('DELETE', `/api/users/${judge._id}`, admin);
+    for (const panel of [p1, p1b, sp, spEmpty, ...criteriaPanels]) if (panel?._id) await api('DELETE', `/api/panels/${panel._id}`, admin);
+    for (const judge of [j1, j2, j3, j4]) if (judge?._id) await api('DELETE', `/api/users/${judge._id}`, admin);
+    if (originalWeight !== undefined) await api('PUT', '/api/stages/final-weights', admin, { stage1: originalWeight });
     for (const t of teams) await api('DELETE', `/api/teams/${t._id}`, admin);
     const leftovers = ((await api('GET', '/api/teams', admin)).json as any[]).filter((t) => t.name.startsWith(tag)).length;
     const restored = (await api('GET', `/api/panels/${awardPanels[0]._id}`, admin)).json;

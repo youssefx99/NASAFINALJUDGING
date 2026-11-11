@@ -71,6 +71,26 @@ export class WinnersController {
   }
 
   /**
+   * Winner of each special panel (highest average score)
+   * GET /api/winners/special
+   */
+  @Get('special')
+  async getSpecialWinners() {
+    try {
+      return {
+        success: true,
+        data: await this.winnersService.getSpecialWinners(),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        data: [],
+      };
+    }
+  }
+
+  /**
    * Get summary statistics for winners
    * GET /api/winners/summary
    */

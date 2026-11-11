@@ -64,6 +64,7 @@ class Router {
       '/admin',
       '/admin/upload-data-stream',
       '/admin/judges',
+      '/admin/export',
       '/admin/teams',
       '/admin/panels',
       '/admin/special-panels',

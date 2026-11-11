@@ -42,7 +42,10 @@ class AdminPage {
           <div class="card-header">
             <div>
               <h3 class="card-title">Top Teams</h3>
-              <p class="mt-0.5 text-xs text-slate-500">Final score = 60% Stage 1 average + 40% best Stage 2 award average · refreshes every 10s</p>
+              <p class="mt-0.5 text-xs text-slate-500">
+                <span id="finalFormula">Final score = weighted Stage 1 average + best Stage 2 award average</span> · refreshes every 10s ·
+                <button type="button" onclick="AdminPage.editWeights()" class="font-medium text-blue-600 hover:text-blue-800">Edit weights</button>
+              </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
               <div class="inline-flex rounded-lg border border-slate-300 bg-white p-0.5" role="tablist">
@@ -67,9 +70,11 @@ class AdminPage {
   }
 
   static stage = '1';
+  static weights = null;
 
   static afterRender() {
     AdminPage.stage = '1';
+    AdminPage.loadWeights();
     AdminPage.loadStats();
     AdminPage.loadScoringOverview();
     AdminPage.loadTopTeams();
@@ -94,6 +99,94 @@ class AdminPage {
     });
     document.getElementById('topTeamsTable').innerHTML = `<table class="table"><tbody>${UI.skeletonRows(6, 6)}</tbody></table>`;
     AdminPage.loadTopTeams();
+  }
+
+  static percent(weight) {
+    return Math.round(weight * 1000) / 10;
+  }
+
+  static async loadWeights() {
+    try {
+      AdminPage.weights = await UI.api('/api/stages/final-weights');
+    } catch (error) {
+      console.error('Could not load final score weights', error);
+      return;
+    }
+    const formula = document.getElementById('finalFormula');
+    if (!formula) return;
+    formula.textContent = `Final score = ${AdminPage.percent(AdminPage.weights.stage1)}% Stage 1 average + ${AdminPage.percent(AdminPage.weights.stage2)}% best Stage 2 award average`;
+    if (AdminPage.stage === 'final') AdminPage.loadTopTeams();
+  }
+
+  static editWeights() {
+    if (!AdminPage.weights) {
+      UI.toast('Weights are still loading', 'info');
+      return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/50 p-4';
+    const field = (id, label, weight) => `
+      <div>
+        <label for="${id}" class="label">${label}</label>
+        <div class="relative">
+          <input id="${id}" type="number" min="0" max="100" step="any" value="${AdminPage.percent(weight)}" class="input pr-8">
+          <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-slate-400">%</span>
+        </div>
+      </div>`;
+    overlay.innerHTML = `
+      <form class="card w-full max-w-md p-6" role="dialog" aria-modal="true" novalidate>
+        <h3 class="text-lg font-semibold text-slate-900">Final score weights</h3>
+        <p class="mt-2 text-sm text-slate-600">Final score = Stage 1 average × Stage 1 weight + best Stage 2 award average × Stage 2 weight. The two weights always add up to 100%. Rankings and award winners update immediately.</p>
+        <div class="mt-5 grid grid-cols-2 gap-4">
+          ${field('weightStage1', 'Stage 1 weight', AdminPage.weights.stage1)}
+          ${field('weightStage2', 'Stage 2 weight', AdminPage.weights.stage2)}
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+          <button type="button" data-action="cancel" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save weights</button>
+        </div>
+      </form>`;
+    const stage1 = overlay.querySelector('#weightStage1');
+    const stage2 = overlay.querySelector('#weightStage2');
+    const close = () => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+    };
+    stage1.addEventListener('input', () => {
+      if (stage1.value !== '') stage2.value = Math.round((100 - Number(stage1.value)) * 10) / 10;
+    });
+    stage2.addEventListener('input', () => {
+      if (stage2.value !== '') stage1.value = Math.round((100 - Number(stage2.value)) * 10) / 10;
+    });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay || e.target.dataset.action === 'cancel') close();
+    });
+    overlay.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const value = Number(stage1.value);
+      if (stage1.value === '' || !(value >= 0 && value <= 100)) {
+        UI.toast('Enter a Stage 1 weight between 0% and 100%', 'error');
+        stage1.focus();
+        return;
+      }
+      const button = e.target.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        await UI.api('/api/stages/final-weights', { method: 'PUT', body: { stage1: Math.round(value * 10) / 1000 } });
+        close();
+        UI.toast('Final score weights saved', 'success');
+        AdminPage.loadWeights();
+      } catch (error) {
+        UI.toast(`Could not save weights: ${error.message}`, 'error');
+        button.disabled = false;
+      }
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    stage1.focus();
   }
 
   static async loadStats() {
@@ -203,7 +296,7 @@ class AdminPage {
     container.innerHTML = `
       <table class="table">
         <thead>
-          <tr><th class="w-16">Rank</th><th>Team</th><th>Challenge</th><th>Stage 1 (60%)</th><th>Stage 2 Best (40%)</th><th>Best Award</th><th>Final Score</th><th>Status</th></tr>
+          <tr><th class="w-16">Rank</th><th>Team</th><th>Challenge</th><th>Stage 1${AdminPage.weights ? ` (${AdminPage.percent(AdminPage.weights.stage1)}%)` : ''}</th><th>Stage 2 Best${AdminPage.weights ? ` (${AdminPage.percent(AdminPage.weights.stage2)}%)` : ''}</th><th>Best Award</th><th>Final Score</th><th>Status</th></tr>
         </thead>
         <tbody>
           ${teams

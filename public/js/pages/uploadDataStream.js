@@ -135,17 +135,6 @@ class UploadDataStreamPage {
         });
     }
 
-    static loadSheetJs() {
-        if (window.XLSX) return Promise.resolve();
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = '/vendor/xlsx.full.min.js';
-            script.onload = resolve;
-            script.onerror = () => reject(new Error('Could not load the spreadsheet reader'));
-            document.head.appendChild(script);
-        });
-    }
-
     static normalizeHeader(header) {
         return String(header).trim().toLowerCase().replace(/[\s-]+/g, '_');
     }
@@ -158,7 +147,7 @@ class UploadDataStreamPage {
         const dropZone = document.getElementById('dropZone');
         dropZone.classList.add('pointer-events-none', 'opacity-60');
         try {
-            await UploadDataStreamPage.loadSheetJs();
+            await UI.loadSheetJs();
             const workbook = /\.csv$/i.test(file.name)
                 ? XLSX.read(await file.text(), { type: 'string' })
                 : XLSX.read(await file.arrayBuffer(), { type: 'array' });

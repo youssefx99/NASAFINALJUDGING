@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../schemas/user.schema';
-import { Panel, PanelDocument } from '../schemas/panel.schema';
+import { Panel, PanelDocument, stage1CriteriaIds } from '../schemas/panel.schema';
 import { Team, TeamDocument } from '../schemas/team.schema';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 import * as bcrypt from 'bcrypt';
@@ -21,7 +21,7 @@ export class JudgesService {
     const [judge, assignedPanels, scores] = await Promise.all([
       this.userModel.findById(judgeId, { role: 1 }).lean().exec(),
       this.panelModel
-        .find({ judges: judgeId }, { stage: 1, teams: 1, awardType: 1, name: 1, awardCriteria: 1 })
+        .find({ judges: judgeId }, { stage: 1, teams: 1, awardType: 1, name: 1, awardCriteria: 1, criteria: 1 })
         .lean()
         .exec(),
       this.scoreModel
@@ -34,9 +34,9 @@ export class JudgesService {
     }
 
     // Stage 1 teams are pooled across the judge's panels; Stage 2 and special panels are listed per panel
-    const stage1TeamIds = assignedPanels
-      .filter((panel) => panel.stage === 1)
-      .flatMap((panel) => panel.teams || []);
+    const stage1Panels = assignedPanels.filter((panel) => panel.stage === 1);
+    const stage1TeamIds = stage1Panels.flatMap((panel) => panel.teams || []);
+    const stage1PanelTeams = stage1Panels.map((panel) => new Set((panel.teams || []).map(String)));
     const stage2Panels = assignedPanels.filter((panel) => panel.stage === 2);
     const stage2TeamIds = stage2Panels.flatMap((panel) => panel.teams || []);
 
@@ -58,7 +58,10 @@ export class JudgesService {
       (panel.teams || []).map((id) => teamsById.get(String(id))).filter(Boolean);
 
     return {
-      stage1Teams: stage1TeamsDetails,
+      stage1Teams: (stage1TeamsDetails as any[]).map((team) => {
+        const criteriaIds = stage1CriteriaIds(stage1Panels.filter((_, i) => stage1PanelTeams[i].has(String(team._id))));
+        return { ...team, criteriaIds: criteriaIds && [...criteriaIds] };
+      }),
       stage1ScoredTeamIds: scores
         .filter((score) => score.stage === 1)
         .map((score) => String(score.team)),

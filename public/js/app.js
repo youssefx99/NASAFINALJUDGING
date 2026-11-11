@@ -12,6 +12,7 @@ class App {
     router.addRoute('/admin/upload-data-stream', UploadDataStreamPage);
     router.addRoute('/admin/judges', JudgesManagementPage);
     router.addRoute('/admin/judges/:id', JudgeDetailPage);
+    router.addRoute('/admin/export', ExportDataPage);
     router.addRoute('/admin/teams', TeamsManagementPage);
     router.addRoute('/admin/teams/:id', TeamDetailPage);
     router.addRoute('/admin/panels', PanelManagementPage);

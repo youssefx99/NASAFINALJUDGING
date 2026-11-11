@@ -29,6 +29,7 @@ class PanelManagementPage {
   static panels = [];
   static judges = [];
   static teams = [];
+  static criteria = [];
   static panelNumbers = [];
   static loaded = false;
   static stage = 1;
@@ -114,9 +115,19 @@ class PanelManagementPage {
                 <select id="panelAward" onchange="PanelManagementPage.markDirty()" class="input"></select>
               </div>
             </div>
-            <div class="grid gap-5 lg:grid-cols-5">
+            <div id="panelEditorTabs" class="flex gap-1 border-b border-slate-200">
+              <button type="button" data-tab="members" onclick="PanelManagementPage.setEditorTab('members')" class="-mb-px border-b-2 px-3 py-2 text-sm font-medium">Judges &amp; teams</button>
+              <button type="button" data-tab="criteria" onclick="PanelManagementPage.setEditorTab('criteria')" class="-mb-px inline-flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium">
+                Criteria <span id="criteriaTabBadge" class="badge badge-yellow">Choose</span>
+              </button>
+            </div>
+            <div id="panelMembersTab" class="grid gap-5 lg:grid-cols-5">
               <div class="lg:col-span-2">${PanelManagementPage.renderPickerShell('judges', 'Judges', 'Search by name or email')}</div>
               <div class="lg:col-span-3">${PanelManagementPage.renderPickerShell('teams', 'Teams', 'Search by team, challenge or panel number')}</div>
+            </div>
+            <div id="panelCriteriaTab" class="hidden space-y-2">
+              <p class="text-sm text-slate-500">Judges on this panel score only the Stage 1 criteria you select; their score out of 5 is based on these criteria.</p>
+              ${PanelManagementPage.renderPickerShell('criteria', 'Stage 1 criteria', 'Search criteria')}
             </div>
           </div>
           <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
@@ -178,13 +189,20 @@ class PanelManagementPage {
     const seq = ++this.seq;
     if (!this.loaded) document.getElementById('panelsTable').innerHTML = this.loadingTable();
     try {
-      const [panels, judges, teams] = await Promise.all([
+      const [panels, judges, teams, stage1] = await Promise.all([
         UI.api('/api/panels'),
         UI.api('/api/users/judges'),
         UI.api('/api/teams'),
+        UI.api('/api/stages/Stage%201'),
       ]);
       if (!document.getElementById('panelsTable')) return;
       this.setTeams(teams);
+      this.criteria = ((stage1 && stage1.criteria) || []).map((c) => ({
+        _id: this.id(c),
+        name: c.name || '',
+        detail: `${this.plural((c.questions || []).length, 'question')} · weight ${Math.round((Number(c.weight) || 0) * 1000) / 10}%`,
+        _search: (c.name || '').toLowerCase(),
+      }));
       if (seq === this.seq) this.setPanelsAndJudges(panels, judges);
       this.loaded = true;
       if (!this.editor) this.renderAll();
@@ -341,6 +359,12 @@ class PanelManagementPage {
     PanelManagementPage.renderTable();
   }, 150);
 
+  // Stage 1 criteria a panel scores (a panel without a selection scores all of them)
+  static panelCriteria(p) {
+    const ids = (p.criteria || []).map(String);
+    return ids.length ? this.criteria.filter((c) => ids.includes(c._id)) : this.criteria;
+  }
+
   static matches(p, q) {
     return (
       [p.name, p.awardType].some((v) => (v || '').toLowerCase().includes(q)) ||
@@ -388,6 +412,7 @@ class PanelManagementPage {
     const open = this.expanded.has(p._id);
     const judgeNames = p.judges.map((j) => j.name).filter(Boolean).join(', ');
     const teamHits = q ? p.teams.filter((t) => (t.name || '').toLowerCase().includes(q)) : [];
+    const criteriaNames = p.stage === 1 ? this.panelCriteria(p).map((c) => c.name).join(', ') : '';
     return `
       <tr class="cursor-pointer" onclick="PanelManagementPage.toggleExpand('${id}')" aria-expanded="${open}">
         <td class="!pr-0">
@@ -396,6 +421,13 @@ class PanelManagementPage {
         <td>
           <p class="font-medium text-slate-900">${UI.escape(p.name)}</p>
           ${p.stage === 2 ? `<span class="badge ${p.awardType ? 'badge-purple' : 'badge-red'} mt-1">${UI.escape(p.awardType || 'No award set')}</span>` : ''}
+          ${
+            p.stage !== 1
+              ? ''
+              : criteriaNames
+                ? `<p class="mt-1 max-w-[18rem] truncate text-xs text-slate-500" title="${UI.escape(criteriaNames)}">Criteria: ${UI.escape(criteriaNames)}</p>`
+                : '<span class="badge badge-red mt-1">No criteria</span>'
+          }
           ${
             teamHits.length
               ? `<p class="mt-1 text-xs text-blue-700">Team match: ${UI.escape(teamHits.slice(0, 2).map((t) => t.name).join(', '))}${teamHits.length > 2 ? ` +${teamHits.length - 2}` : ''}</p>`
@@ -489,18 +521,19 @@ class PanelManagementPage {
       selected: {
         judges: new Set(panel ? panel.judges.map((j) => this.id(j)) : []),
         teams: new Set(panel ? panel.teams.map((t) => this.id(t)) : []),
+        criteria: new Set(panel && panel.stage === 1 ? this.panelCriteria(panel).map((c) => c._id) : []),
       },
-      query: { judges: '', teams: '' },
-      selectedOnly: { judges: false, teams: false },
-      visible: { judges: [], teams: [] },
-      membership: { judges: new Map(), teams: new Map() },
+      query: { judges: '', teams: '', criteria: '' },
+      selectedOnly: { judges: false, teams: false, criteria: false },
+      visible: { judges: [], teams: [], criteria: [] },
+      membership: { judges: new Map(), teams: new Map(), criteria: new Map() },
       dirty: false,
       saving: false,
     };
     document.getElementById('panelModalTitle').textContent = panel ? `Edit ${panel.name}` : 'New panel';
     document.getElementById('panelName').value = panel ? panel.name : '';
     document.getElementById('panelStage').value = String(this.editor.stage);
-    ['judges', 'teams'].forEach((kind) => {
+    ['judges', 'teams', 'criteria'].forEach((kind) => {
       document.getElementById(`${kind}Search`).value = '';
       document.getElementById(`${kind}SelectedOnly`).checked = false;
     });
@@ -511,6 +544,7 @@ class PanelManagementPage {
     const saveBtn = document.getElementById('panelSaveBtn');
     saveBtn.disabled = false;
     saveBtn.textContent = panel ? 'Save changes' : 'Create panel';
+    this.setEditorTab('members');
     this.applyStage();
     document.getElementById('panelModal').classList.remove('hidden');
     document.getElementById('panelName').focus();
@@ -535,10 +569,24 @@ class PanelManagementPage {
     this.applyStage();
   }
 
+  static setEditorTab(tab) {
+    document.getElementById('panelMembersTab').classList.toggle('hidden', tab !== 'members');
+    document.getElementById('panelCriteriaTab').classList.toggle('hidden', tab !== 'criteria');
+    document.querySelectorAll('#panelEditorTabs [data-tab]').forEach((btn) => {
+      const active = btn.dataset.tab === tab;
+      btn.classList.toggle('border-blue-600', active);
+      btn.classList.toggle('text-blue-700', active);
+      btn.classList.toggle('border-transparent', !active);
+      btn.classList.toggle('text-slate-500', !active);
+    });
+  }
+
   static applyStage() {
     const ed = this.editor;
     document.getElementById('panelAwardWrap').classList.toggle('hidden', ed.stage !== 2);
     document.getElementById('panelNumberWrap').classList.toggle('hidden', ed.stage !== 1);
+    document.getElementById('panelEditorTabs').classList.toggle('hidden', ed.stage !== 1);
+    if (ed.stage !== 1) this.setEditorTab('members');
     // Other panels of the same stage each judge/team already sits on (teams only matter for Stage 1)
     const judges = new Map();
     const teams = new Map();
@@ -548,9 +596,10 @@ class PanelManagementPage {
       p.judges.forEach((j) => add(judges, this.id(j), p.name));
       if (ed.stage === 1) p.teams.forEach((t) => add(teams, this.id(t), p.name));
     });
-    ed.membership = { judges, teams };
+    ed.membership = { judges, teams, criteria: new Map() };
     this.renderPicker('judges');
     this.renderPicker('teams');
+    this.renderPicker('criteria');
   }
 
   static renderPicker(kind) {
@@ -559,7 +608,7 @@ class PanelManagementPage {
     if (!ed || !list) return;
     const sel = ed.selected[kind];
     const q = ed.query[kind];
-    const source = kind === 'teams' ? this.teams : this.judges;
+    const source = kind === 'teams' ? this.teams : kind === 'criteria' ? this.criteria : this.judges;
     const matches = source.filter((x) => (!ed.selectedOnly[kind] || sel.has(x._id)) && (!q || x._search.includes(q)));
     const items = matches.filter((x) => sel.has(x._id)).concat(matches.filter((x) => !sel.has(x._id)));
     ed.visible[kind] = items.map((x) => x._id);
@@ -577,7 +626,7 @@ class PanelManagementPage {
         <input type="checkbox" value="${UI.escape(item._id)}" ${checked ? 'checked' : ''} class="h-4 w-4 shrink-0 accent-blue-600">
         <span class="min-w-0 flex-1">
           <span class="block truncate text-sm font-medium text-slate-900">${UI.escape(item.name)}</span>
-          <span class="block truncate text-xs text-slate-500">${UI.escape(isTeam ? item.challenge : item.email)}</span>
+          <span class="block truncate text-xs text-slate-500">${UI.escape(isTeam ? item.challenge : kind === 'criteria' ? item.detail : item.email)}</span>
         </span>
         ${note ? `<span class="shrink-0 text-xs ${isTeam ? 'text-amber-600' : 'text-slate-400'}" title="${UI.escape(others.join(', '))}">${UI.escape(note)}</span>` : ''}
         ${isTeam && item.panelNumber ? `<span class="badge badge-gray shrink-0">#${UI.escape(item.panelNumber)}</span>` : ''}
@@ -590,6 +639,11 @@ class PanelManagementPage {
     const teams = ed.selected.teams.size;
     document.getElementById('judgesCount').textContent = `${judges} selected`;
     document.getElementById('teamsCount').textContent = `${teams} of ${this.teams.length} selected`;
+    const criteria = ed.selected.criteria.size;
+    document.getElementById('criteriaCount').textContent = `${criteria} of ${this.criteria.length} selected`;
+    const badge = document.getElementById('criteriaTabBadge');
+    badge.className = `badge ${criteria ? 'badge-blue' : 'badge-yellow'}`;
+    badge.textContent = criteria ? `${criteria} of ${this.criteria.length}` : 'Choose';
     const shared = [...ed.selected.teams].filter((id) => ed.membership.teams.has(id)).length;
     document.getElementById('panelSummary').innerHTML = `${this.plural(judges, 'judge')} · ${this.plural(teams, 'team')}${
       shared ? ` · <span class="text-amber-600">${this.plural(shared, 'team')} also in another Stage 1 panel</span>` : ''
@@ -688,8 +742,14 @@ class PanelManagementPage {
       awardSelect.focus();
       return;
     }
+    if (ed.stage === 1 && !ed.selected.criteria.size) {
+      UI.toast('Choose the Stage 1 criteria this panel scores', 'error');
+      this.setEditorTab('criteria');
+      return;
+    }
     const body = { name, stage: ed.stage, judges: [...ed.selected.judges], teams: [...ed.selected.teams] };
     if (ed.stage === 2) body.awardType = awardSelect.value;
+    if (ed.stage === 1) body.criteria = [...ed.selected.criteria];
 
     const btn = document.getElementById('panelSaveBtn');
     const label = btn.textContent;

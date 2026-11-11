@@ -16,7 +16,7 @@ class WinnersPage {
       '<div class="card space-y-4 p-5"><div class="skeleton h-3 w-1/2"></div><div class="flex items-center gap-3"><div class="skeleton h-10 w-10 rounded-full"></div><div class="skeleton h-5 w-2/3"></div></div><div class="skeleton h-8 w-1/3"></div></div>';
     return Layout.admin({
       title: 'Award Winners',
-      subtitle: 'Stage 2 results for each award panel',
+      subtitle: 'Stage 2 award panel and special panel results',
       actions: `
         <button type="button" id="winnersRefreshBtn" onclick="WinnersPage.loadWinners()" class="btn btn-secondary">
           ${WinnersPage.svg(WinnersPage.ICONS.refresh, 'h-4 w-4')} Refresh
@@ -26,7 +26,8 @@ class WinnersPage {
         </button>`,
       content: `
         <div id="winnersSummary" class="mb-6"></div>
-        <div id="winnersGrid" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">${skeleton.repeat(6)}</div>`,
+        <div id="winnersGrid" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">${skeleton.repeat(6)}</div>
+        <div id="specialWinners" class="mt-8"></div>`,
     });
   }
 
@@ -38,10 +39,12 @@ class WinnersPage {
     const btn = document.getElementById('winnersRefreshBtn');
     if (btn) btn.disabled = true;
     try {
-      const res = await UI.api('/api/winners/award-status');
+      const [res, special] = await Promise.all([UI.api('/api/winners/award-status'), UI.api('/api/winners/special')]);
       if (!document.getElementById('winnersGrid')) return;
       if (!res || res.success === false) throw new Error((res && res.error) || 'The server could not compute award results');
+      if (!special || special.success === false) throw new Error((special && special.error) || 'The server could not compute special panel results');
       WinnersPage.renderAllPanels(res);
+      WinnersPage.renderSpecial(special.data || []);
     } catch (e) {
       if (document.getElementById('winnersGrid')) WinnersPage.renderError(e.message);
     } finally {
@@ -74,7 +77,28 @@ class WinnersPage {
     grid.innerHTML = awards.map((award) => (award.hasWinner ? this.winnerCard(award) : this.pendingCard(award))).join('');
   }
 
-  static winnerCard(award) {
+  static renderSpecial(panels) {
+    document.getElementById('specialWinners').innerHTML = panels.length
+      ? `
+      <h2 class="text-base font-semibold text-slate-900">Special panels</h2>
+      <p class="mb-4 mt-0.5 text-sm text-slate-500">The winner is the team with the highest average score in the panel.</p>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        ${panels
+          .map((panel) => {
+            const card = {
+              awardType: panel.name,
+              winnerTeam: panel.winnerTeam?.name,
+              winnerScore: panel.winnerTeam?.averageScore,
+              judgeCount: panel.winnerTeam?.judgeCount,
+            };
+            return panel.winnerTeam ? this.winnerCard(card, 'Average score (out of 5)') : this.pendingCard(card, 'Special panel judging in progress');
+          })
+          .join('')}
+      </div>`
+      : '';
+  }
+
+  static winnerCard(award, scoreLabel = 'Final score') {
     const score = typeof award.winnerScore === 'number' ? award.winnerScore.toFixed(2) : '--';
     const judges = Number(award.judgeCount) || 0;
     return `
@@ -92,7 +116,7 @@ class WinnersPage {
           <div class="mt-5 flex items-end justify-between gap-3 border-t border-slate-100 pt-4">
             <div>
               <p class="text-2xl font-semibold tabular-nums text-amber-600">${score}</p>
-              <p class="text-xs text-slate-500">Final score</p>
+              <p class="text-xs text-slate-500">${scoreLabel}</p>
             </div>
             <p class="text-sm text-slate-500">${judges} judge${judges === 1 ? '' : 's'}</p>
           </div>
@@ -100,7 +124,7 @@ class WinnersPage {
       </div>`;
   }
 
-  static pendingCard(award) {
+  static pendingCard(award, note = 'Stage 2 judging in progress') {
     return `
       <div class="card border-dashed p-5">
         <div class="flex items-start justify-between gap-3">
@@ -113,13 +137,14 @@ class WinnersPage {
         </div>
         <div class="mt-5 border-t border-slate-100 pt-4">
           <p class="text-2xl font-semibold text-slate-300">--</p>
-          <p class="text-xs text-slate-500">Stage 2 judging in progress</p>
+          <p class="text-xs text-slate-500">${note}</p>
         </div>
       </div>`;
   }
 
   static renderError(message) {
     document.getElementById('winnersSummary').innerHTML = '';
+    document.getElementById('specialWinners').innerHTML = '';
     document.getElementById('winnersGrid').innerHTML = `
       <div class="card col-span-full flex flex-col items-center px-6 py-12 text-center">
         <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-500">${this.svg(this.ICONS.alert, 'h-6 w-6')}</div>

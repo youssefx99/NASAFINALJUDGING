@@ -7,8 +7,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 import { Team, TeamDocument } from '../schemas/team.schema';
-import { Panel } from '../schemas/panel.schema';
+import { Panel, stage1CriteriaIds } from '../schemas/panel.schema';
 import { Stage } from '../schemas/stage.schema';
+import { StagesService } from '../stages/stages.service';
 
 @Injectable()
 export class ScoresService {
@@ -17,6 +18,7 @@ export class ScoresService {
     @InjectModel(Team.name) private teamModel: Model<TeamDocument>,
     @InjectModel(Panel.name) private panelModel: Model<Panel>,
     @InjectModel(Stage.name) private stageModel: Model<Stage>,
+    private readonly stagesService: StagesService,
   ) {}
 
   // The judge must be on a panel of this stage that contains the team; the total is computed
@@ -40,9 +42,9 @@ export class ScoresService {
       this.panelModel
         .find(
           { stage, judges: judgeId, teams: teamId, ...(hasPanelId ? { _id: panelId } : {}) },
-          { awardType: 1, awardCriteria: 1 },
+          { awardType: 1, awardCriteria: 1, criteria: 1 },
         )
-        .limit(2)
+        .limit(stage === 1 ? 0 : 2)
         .lean()
         .exec(),
       stage === 3
@@ -90,9 +92,14 @@ export class ScoresService {
       scores[String(panel._id)] = answers;
       totalScore = answers.reduce((sum, v) => sum + v, 0) / answers.length;
     } else if (stage === 1) {
+      const selected = stage1CriteriaIds(candidates);
+      const criteria = stageDoc!.criteria.filter((c) => !selected || selected.has(String(c._id)));
+      if (criteria.length === 0) {
+        throw new BadRequestException('No Stage 1 criteria are selected for this panel');
+      }
       let total = 0;
       let max = 0;
-      for (const criterion of stageDoc!.criteria) {
+      for (const criterion of criteria) {
         const answers = readAnswers(criterion.name, criterion.questions.length, (v) => v === 0 || v === 1);
         scores[criterion.name] = answers;
         criteriaScores[criterion.name] = answers.reduce((sum, v) => sum + v, 0);
@@ -239,7 +246,7 @@ export class ScoresService {
   async getTopTeams(stage: number | 'final', limit: number) {
     if (stage !== 1 && stage !== 2 && stage !== 'final') return [];
 
-    const [teams, stage1Averages, awardAverages] = await Promise.all([
+    const [teams, stage1Averages, awardAverages, weights] = await Promise.all([
       this.teamModel.find({}, { name: 1, challenge: 1 }).lean().exec(),
       stage === 2
         ? []
@@ -272,6 +279,7 @@ export class ScoresService {
               { $sort: { firstScore: 1 } },
             ])
             .exec(),
+      stage === 'final' ? this.stagesService.getFinalWeights() : null,
     ]);
 
     const stage1Scores = new Map(
@@ -317,7 +325,7 @@ export class ScoresService {
         .slice(0, limit);
 
     if (stage === 'final') {
-      // Final score: 60% Stage 1 average + 40% best Stage 2 award average
+      // Final score: weighted Stage 1 average + best Stage 2 award average (weights set by the admin)
       const finalScores = teams.map((team) => {
         const stage1Score = stage1Scores.get(String(team._id))?.averageScore || 0;
         const stage2 = stage2Scores.get(String(team._id));
@@ -329,7 +337,7 @@ export class ScoresService {
           stage1Score,
           stage2BestScore,
           bestAward: stage2BestScore > 0 ? stage2!.bestAward : 'N/A',
-          finalScore: 0.6 * stage1Score + 0.4 * stage2BestScore,
+          finalScore: weights!.stage1 * stage1Score + weights!.stage2 * stage2BestScore,
           hasStage1Score: stage1Score > 0,
           hasStage2Score: stage2BestScore > 0,
           hasAnyScore: stage1Score > 0 || stage2BestScore > 0,

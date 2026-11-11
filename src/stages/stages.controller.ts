@@ -27,6 +27,16 @@ export class StagesController {
     }
   }
 
+  @Get('final-weights')
+  async getFinalWeights() {
+    return await this.stagesService.getFinalWeights();
+  }
+
+  @Put('final-weights')
+  async setFinalWeights(@Body() body: { stage1?: unknown }) {
+    return await this.stagesService.setFinalWeights(body?.stage1);
+  }
+
   @Roles('admin', 'judge')
   @Get(':name')
   async getStageByName(@Param('name') name: string) {

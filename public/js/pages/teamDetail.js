@@ -46,17 +46,18 @@ class TeamDetailPage {
 
     try {
       const id = encodeURIComponent(teamId);
-      const [team, panels, stage1Scores, stage2Scores] = await Promise.all([
+      const [team, panels, stage1Scores, stage2Scores, weights] = await Promise.all([
         UI.api(`/api/teams/${id}`),
         optional('/api/panels'),
         optional(`/api/scores/team/${id}/stage/1`),
         optional(`/api/scores/team/${id}/stage/2`),
+        optional('/api/stages/final-weights'),
       ]);
       if (!document.getElementById('teamContent')) return;
 
       document.getElementById('teamName').textContent = team.name;
       document.getElementById('teamSubtitle').textContent = team.challenge || '';
-      TeamDetailPage.renderTeam(team, panels, stage1Scores, stage2Scores);
+      TeamDetailPage.renderTeam(team, panels, stage1Scores, stage2Scores, weights);
     } catch (error) {
       console.error('Failed to load team details:', error);
       if (!document.getElementById('teamContent')) return;
@@ -78,7 +79,7 @@ class TeamDetailPage {
     }
   }
 
-  static renderTeam(team, panels, stage1Scores, stage2Scores) {
+  static renderTeam(team, panels, stage1Scores, stage2Scores, weights) {
     const teamId = team._id;
     const hasTeam = (panel) => (panel.teams || []).some((t) => t && (t._id || t) === teamId);
     const stage1Panel = panels?.find((p) => Number(p.stage) === 1 && hasTeam(p)) || null;
@@ -107,8 +108,9 @@ class TeamDetailPage {
     }));
     const stage2Score = awardAverages.reduce((max, a) => Math.max(max, a.avg), 0);
 
-    const scoresLoaded = stage1Scores && stage2Scores;
-    const totalScore = 0.6 * stage1Score + 0.4 * stage2Score;
+    const scoresLoaded = stage1Scores && stage2Scores && weights;
+    const totalScore = scoresLoaded ? weights.stage1 * stage1Score + weights.stage2 * stage2Score : 0;
+    const percent = (weight) => Math.round(weight * 1000) / 10;
 
     document.getElementById('teamContent').innerHTML = `
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -121,7 +123,7 @@ class TeamDetailPage {
           <div class="rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 p-6 text-white shadow-sm">
             <p class="text-sm font-medium text-white/80">Total combined score</p>
             <p class="mt-1 text-4xl font-semibold">${scoresLoaded ? totalScore.toFixed(2) : '—'}</p>
-            <p class="mt-2 text-xs text-white/70">60% Stage 1 + 40% Stage 2</p>
+            <p class="mt-2 text-xs text-white/70">${weights ? `${percent(weights.stage1)}% Stage 1 + ${percent(weights.stage2)}% Stage 2` : 'Weighted Stage 1 + Stage 2'}</p>
           </div>
 
           <div class="card">

@@ -29,6 +29,18 @@ const UI = {
     return data;
   },
 
+  // SheetJS (Excel read/write) is loaded on first use
+  loadSheetJs() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/vendor/xlsx.full.min.js';
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Could not load the spreadsheet library'));
+      document.head.appendChild(script);
+    });
+  },
+
   escape(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')

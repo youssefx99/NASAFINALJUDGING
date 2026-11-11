@@ -389,7 +389,8 @@ class Stage2TeamDetailPage {
     }
 
     root.querySelectorAll('[data-submit]').forEach((btn) => {
-      btn.disabled = s.saving || !count;
+      btn.disabled = s.saving || !count || picked.length < count;
+      btn.title = picked.length < count ? 'Rate every question to submit' : '';
       btn.innerHTML = s.saving ? `${this.icons.spinner} Saving…` : scored ? 'Update score' : 'Submit score';
     });
     root.querySelectorAll('[data-next]').forEach((btn) => {
@@ -400,7 +401,9 @@ class Stage2TeamDetailPage {
       btn.innerHTML = next ? `Next team ${this.icons.arrow}` : 'Finish';
     });
     document.getElementById('s2UpNext').textContent = !scored
-      ? 'Submit your score to continue'
+      ? picked.length < count
+        ? `Rate all questions to submit (${count - picked.length} left)`
+        : 'Submit your score to continue'
       : next
         ? `Up next: ${next.name}`
         : 'All teams scored';
@@ -436,7 +439,21 @@ class Stage2TeamDetailPage {
         el.className = `${this.timerBase} ${tone}`;
         el.querySelector('[data-timer-text]').textContent = text;
       });
-      if (left === 0) UI.toast("Time's up. Please submit your score.", 'warning', 6000);
+      if (left === 0) {
+        // Time's up: unanswered questions get the lowest rating (1) and the score is sent automatically
+        const s = this.state;
+        if (s && !s.saving && s.answers.length && (s.dirty || !s.scoredIds.has(s.team._id))) {
+          s.answers.forEach((v, qi) => {
+            if (v !== null) return;
+            s.answers[qi] = 1;
+            document.getElementById(`q${qi}_1`).checked = true;
+          });
+          UI.toast("Time's up. Unanswered questions were rated 1 and your score is being submitted.", 'warning', 6000);
+          this.submitScore();
+        } else {
+          UI.toast("Time's up.", 'warning', 6000);
+        }
+      }
     };
     window.stage2RefreshInterval = setInterval(tick, 1000);
     tick();

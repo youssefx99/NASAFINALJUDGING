@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type StageDocument = Stage & Document;
 
@@ -10,6 +10,10 @@ export class Stage {
 
   @Prop({ type: Number, default: 30 })
   timerMinutes: number;
+
+  // Stage 1 only: its share of the final score (0–1); Stage 2 gets the rest
+  @Prop({ type: Number, min: 0, max: 1 })
+  finalWeight?: number;
 
   @Prop([
     {
@@ -28,6 +32,7 @@ export class Stage {
     },
   ])
   criteria: Array<{
+    _id?: Types.ObjectId;
     name: string;
     weight: number;
     questions: string[];

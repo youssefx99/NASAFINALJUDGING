@@ -17,6 +17,10 @@ export class Panel {
   @Prop([{ type: MongooseSchema.Types.ObjectId, ref: 'Team' }])
   teams: Types.ObjectId[];
 
+  // Stage 1 panels: ids of the Stage 1 criteria this panel scores (empty = all criteria)
+  @Prop([{ type: MongooseSchema.Types.ObjectId }])
+  criteria: Types.ObjectId[];
+
   // Added: Award type for Stage 2 panels
   @Prop({
     type: String,
@@ -66,3 +70,9 @@ export class Panel {
 export const PanelSchema = SchemaFactory.createForClass(Panel);
 PanelSchema.index({ stage: 1, awardType: 1 });
 PanelSchema.index({ judges: 1 });
+
+// Stage 1 criteria ids a judge scores a team on: the union over the Stage 1 panels they share; null = all criteria
+export function stage1CriteriaIds(panels: Array<{ criteria?: Types.ObjectId[] }>): Set<string> | null {
+  if (panels.some((panel) => !panel.criteria?.length)) return null;
+  return new Set(panels.flatMap((panel) => panel.criteria!.map(String)));
+}

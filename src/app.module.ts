@@ -12,6 +12,7 @@ import { StagesModule } from './stages/stages.module';
 import { ScoresModule } from './scores/scores.module';
 import { Stage2QualificationModule } from './stage2-qualification/stage2-qualification.module';
 import { WinnersModule } from './winners/winners.module';
+import { ExportModule } from './export/export.module';
 import databaseConfig from './config/database.config';
 
 @Module({
@@ -30,6 +31,7 @@ import databaseConfig from './config/database.config';
     ScoresModule,
     Stage2QualificationModule,
     WinnersModule,
+    ExportModule,
   ],
   controllers: [AppController],
   providers: [AppService],
