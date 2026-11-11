@@ -3,7 +3,6 @@ class Stage1TeamDetailPage {
   static state = null;
   static loadSeq = 0;
   static highlight = ['ring-2', 'ring-amber-400', 'bg-amber-50'];
-  static timerBase = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-xs font-semibold tabular-nums';
   static icons = {
     back: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>',
     arrow: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>',
@@ -222,8 +221,16 @@ class Stage1TeamDetailPage {
     `;
   }
 
-  static renderTimer() {
-    return `<span data-timer class="${this.timerBase} bg-slate-100 text-slate-700">${this.icons.clock}<span data-timer-text>--:--</span></span>`;
+  static renderTimer(big = false) {
+    const base = big
+      ? 'flex flex-col items-center rounded-xl px-4 py-3 transition-colors'
+      : 'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-mono text-base font-bold tabular-nums transition-colors';
+    return big
+      ? `<div data-timer data-base="${base}" class="${base} bg-slate-100 text-slate-800">
+          <span class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide opacity-80">${this.icons.clock} Time left</span>
+          <span data-timer-text class="mt-1 font-mono text-4xl font-bold tabular-nums">--:--</span>
+        </div>`
+      : `<span data-timer data-base="${base}" class="${base} bg-slate-100 text-slate-800">${this.icons.clock}<span data-timer-text>--:--</span></span>`;
   }
 
   static renderSummary() {
@@ -231,10 +238,7 @@ class Stage1TeamDetailPage {
       <aside class="hidden lg:block">
         <div class="card sticky top-24">
           <div class="card-body space-y-5">
-            <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-slate-500">Time left</span>
-              ${this.renderTimer()}
-            </div>
+            ${this.renderTimer(true)}
             <div>
               <p class="text-sm text-slate-500">Current score</p>
               <p class="mt-1 text-4xl font-bold tracking-tight text-slate-900"><span data-score>0.00</span><span class="text-lg font-medium text-slate-400"> / 5</span></p>
@@ -349,10 +353,11 @@ class Stage1TeamDetailPage {
       status.textContent = scored ? 'Scored' : 'Not scored yet';
     }
 
+    const closed = s.locked && scored && !s.dirty;
     root.querySelectorAll('[data-submit]').forEach((btn) => {
-      btn.disabled = s.saving || !count || answered < count;
-      btn.title = answered < count ? 'Answer every question to submit' : '';
-      btn.innerHTML = s.saving ? `${this.icons.spinner} Saving…` : scored ? 'Update score' : 'Submit score';
+      btn.disabled = s.saving || !count || answered < count || closed;
+      btn.title = closed ? "Time's up: the score is locked" : answered < count ? 'Answer every question to submit' : '';
+      btn.innerHTML = s.saving ? `${this.icons.spinner} Saving…` : closed ? 'Score locked' : scored ? 'Update score' : 'Submit score';
     });
     root.querySelectorAll('[data-next]').forEach((btn) => {
       btn.disabled = !scored || s.saving;
@@ -378,34 +383,38 @@ class Stage1TeamDetailPage {
 
   static startTimer(minutes) {
     clearInterval(window.stage1RefreshInterval);
-    const endsAt = Date.now() + minutes * 60000;
+    // The countdown survives reloads: it starts the first time this judge opens this team
+    const key = `scoreTimer:${authService.getUserId()}:1:${this.state.team._id}`;
+    let startedAt = Date.now();
+    try {
+      startedAt = Number(localStorage.getItem(key)) || startedAt;
+      localStorage.setItem(key, String(startedAt));
+    } catch (e) {}
+    const total = minutes * 60;
+    const endsAt = startedAt + total * 1000;
+    const expiredOnOpen = Date.now() >= endsAt;
     const tick = async () => {
       const timers = document.querySelectorAll('#stage1Root [data-timer]');
       const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
       if (!timers.length || left === 0) clearInterval(window.stage1RefreshInterval);
       if (!timers.length) return;
-      const tone =
-        left === 0
-          ? 'bg-red-600 text-white'
-          : left <= 60
-            ? 'bg-red-100 text-red-700'
-            : left <= 300
-              ? 'bg-amber-100 text-amber-800'
-              : 'bg-slate-100 text-slate-700';
+      const tone = left === 0 ? 'bg-red-600 text-white' : left <= total * 0.2 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-800';
       const text =
         left === 0
           ? "Time's up"
           : `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
       timers.forEach((el) => {
-        el.className = `${this.timerBase} ${tone}`;
+        el.className = `${el.dataset.base} ${tone}`;
         el.querySelector('[data-timer-text]').textContent = text;
       });
       if (left === 0) {
-        // Time's up: the current answers are submitted (unanswered count as "No"), then the judge is offered the next team
+        // Time's up: answers are locked and anything not yet submitted is sent (unanswered count as "No")
         const s = this.state;
-        if (!s || s.saving || !s.criteria.length) return;
+        if (!s || s.locked || !s.criteria.length) return;
+        s.locked = true;
         const pending = s.dirty || !s.scoredIds.has(s.team._id);
         if (pending) {
+          s.dirty = true;
           s.answers.forEach((row, ci) =>
             row.forEach((v, qi) => {
               if (v !== null) return;
@@ -413,8 +422,16 @@ class Stage1TeamDetailPage {
               document.querySelector(`input[name="s1_${ci}_${qi}"][value="0"]`).checked = true;
             }),
           );
-          if (!(await this.submitScore())) return;
         }
+        document.querySelectorAll('#scoringForm input').forEach((input) => (input.disabled = true));
+        const form = document.getElementById('scoringForm');
+        form.classList.add('pointer-events-none');
+        form.insertAdjacentHTML(
+          'afterbegin',
+          `<div class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">${this.icons.clock} Time's up: answers are locked.</div>`,
+        );
+        this.refresh();
+        if (pending ? !(await this.submitScore()) : expiredOnOpen) return;
         const next = this.nextTeam();
         const go = await UI.confirm({
           title: "Time's up",
