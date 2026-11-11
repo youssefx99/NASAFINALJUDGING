@@ -41,6 +41,38 @@ const UI = {
     });
   },
 
+  // A team's project links as raised buttons with an icon (judge scoring pages)
+  teamLinkButtons(team) {
+    const icon = (d) =>
+      `<svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${d}"></path></svg>`;
+    const links = [
+      ['demoLink', 'Demo', 'bg-gradient-to-br from-rose-500 to-red-600 text-white', icon('M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664zM21 12a9 9 0 11-18 0 9 9 0 0118 0z')],
+      ['proposalLink', 'Proposal', 'bg-gradient-to-br from-amber-400 to-orange-500 text-white', icon('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z')],
+      ['projectLink', 'Project', 'bg-gradient-to-br from-slate-700 to-slate-900 text-white', icon('M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4')],
+      ['nasaSubmitLink', 'NASA page', 'bg-white ring-1 ring-slate-200', '<img src="/assets/nasa%20cairo%20logo.png" alt="" class="h-6 w-6 object-contain">'],
+    ];
+    return links
+      .map(([key, label, tone, logo]) => {
+        const url = String(team[key] || '').trim();
+        if (!url) {
+          return `
+            <span class="inline-flex items-center gap-2.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 py-2 pl-2 pr-3 text-xs text-slate-400 sm:text-sm">
+              <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg opacity-40 grayscale ${tone}">${logo}</span>
+              <span class="whitespace-nowrap">No ${label}</span>
+            </span>`;
+        }
+        const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+        return `
+          <a href="${UI.escape(href)}" target="_blank" rel="noopener noreferrer"
+            class="group inline-flex select-none items-center gap-2.5 rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-100 py-2 pl-2 pr-3.5 text-sm font-semibold text-slate-800 shadow-[0_4px_0_0_#cbd5e1,0_8px_14px_-6px_rgba(15,23,42,0.25)] transition-all duration-100 hover:-translate-y-0.5 hover:shadow-[0_6px_0_0_#cbd5e1,0_12px_18px_-6px_rgba(15,23,42,0.3)] active:translate-y-1 active:shadow-[0_0_0_0_#cbd5e1,0_2px_4px_-2px_rgba(15,23,42,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-[inset_0_-2px_0_rgba(0,0,0,0.15)] ${tone}">${logo}</span>
+            <span class="flex-1 whitespace-nowrap">${label}</span>
+            <svg class="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block transition-colors group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+          </a>`;
+      })
+      .join('');
+  },
+
   escape(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')

@@ -7,7 +7,6 @@ class Stage1TeamDetailPage {
   static icons = {
     back: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>',
     arrow: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>',
-    external: '<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>',
     clock: '<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
     yes: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>',
     no: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>',
@@ -159,12 +158,6 @@ class Stage1TeamDetailPage {
   }
 
   static renderTeamHeader(team) {
-    const links = [
-      ['demoLink', 'Demo'],
-      ['proposalLink', 'Proposal'],
-      ['projectLink', 'Project'],
-      ['nasaSubmitLink', 'NASA page'],
-    ];
     return `
       <section class="card overflow-hidden">
         <div class="h-1 bg-blue-600"></div>
@@ -184,23 +177,10 @@ class Stage1TeamDetailPage {
               <dd class="mt-0.5">${team.actualSolution ? `<span class="badge badge-gray uppercase">${UI.escape(team.actualSolution)}</span>` : '<span class="text-slate-800">—</span>'}</dd>
             </div>
           </dl>
-          <div class="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-            ${links
-              .map(([key, label]) =>
-                team[key]
-                  ? `<a href="${UI.escape(this.safeUrl(team[key]))}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">${label} ${this.icons.external}</a>`
-                  : `<span class="inline-flex items-center justify-center rounded-lg border border-dashed border-slate-200 px-4 py-2 text-sm text-slate-400">No ${label.toLowerCase()}</span>`,
-              )
-              .join('')}
-          </div>
+          <div class="mt-5 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">${UI.teamLinkButtons(team)}</div>
         </div>
       </section>
     `;
-  }
-
-  static safeUrl(url) {
-    const value = String(url).trim();
-    return /^https?:\/\//i.test(value) ? value : `https://${value}`;
   }
 
   static renderCriterion(criterion, ci, maxWeighted) {
@@ -399,7 +379,7 @@ class Stage1TeamDetailPage {
   static startTimer(minutes) {
     clearInterval(window.stage1RefreshInterval);
     const endsAt = Date.now() + minutes * 60000;
-    const tick = () => {
+    const tick = async () => {
       const timers = document.querySelectorAll('#stage1Root [data-timer]');
       const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
       if (!timers.length || left === 0) clearInterval(window.stage1RefreshInterval);
@@ -421,9 +401,11 @@ class Stage1TeamDetailPage {
         el.querySelector('[data-timer-text]').textContent = text;
       });
       if (left === 0) {
-        // Time's up: unanswered questions count as "No" and the score is sent automatically
+        // Time's up: the current answers are submitted (unanswered count as "No"), then the judge is offered the next team
         const s = this.state;
-        if (s && !s.saving && s.criteria.length && (s.dirty || !s.scoredIds.has(s.team._id))) {
+        if (!s || s.saving || !s.criteria.length) return;
+        const pending = s.dirty || !s.scoredIds.has(s.team._id);
+        if (pending) {
           s.answers.forEach((row, ci) =>
             row.forEach((v, qi) => {
               if (v !== null) return;
@@ -431,11 +413,18 @@ class Stage1TeamDetailPage {
               document.querySelector(`input[name="s1_${ci}_${qi}"][value="0"]`).checked = true;
             }),
           );
-          UI.toast("Time's up. Unanswered questions were marked No and your score is being submitted.", 'warning', 6000);
-          this.submitScore();
-        } else {
-          UI.toast("Time's up.", 'warning', 6000);
+          if (!(await this.submitScore())) return;
         }
+        const next = this.nextTeam();
+        const go = await UI.confirm({
+          title: "Time's up",
+          message: pending
+            ? 'Your score was submitted automatically with your current answers. Unanswered questions were counted as "No".'
+            : 'Your score for this team is already submitted.',
+          confirmText: next ? 'Go to next team' : 'Finish',
+          cancelText: 'Stay on this team',
+        });
+        if (go && this.state === s) this.goToNextTeam();
       }
     };
     window.stage1RefreshInterval = setInterval(tick, 1000);
@@ -490,8 +479,10 @@ class Stage1TeamDetailPage {
         `Score saved for ${s.team.name}.${next ? ` Next up: ${next.name}` : ' All your teams are scored.'}`,
         'success',
       );
+      return true;
     } catch (error) {
       UI.toast(`Failed to save score: ${error.message}`, 'error', 6000);
+      return false;
     } finally {
       s.saving = false;
       if (this.state === s) this.refresh();

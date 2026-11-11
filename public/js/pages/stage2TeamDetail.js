@@ -7,7 +7,6 @@ class Stage2TeamDetailPage {
   static icons = {
     back: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>',
     arrow: '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>',
-    external: '<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>',
     clock: '<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
     spinner: '<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>',
   };
@@ -145,7 +144,7 @@ class Stage2TeamDetailPage {
     root().innerHTML = this.renderPage();
     document.getElementById('scoringForm').addEventListener('change', (e) => this.onAnswer(e));
     this.refresh();
-    this.startTimer(stage.timerMinutes || 30);
+    if (!special) this.startTimer(stage.timerMinutes || 30);
     if (scoreError) UI.toast(`Couldn't load your saved score: ${scoreError.message}`, 'warning');
   }
 
@@ -206,12 +205,6 @@ class Stage2TeamDetailPage {
   }
 
   static renderTeamHeader(team) {
-    const links = [
-      ['demoLink', 'Demo'],
-      ['proposalLink', 'Proposal'],
-      ['projectLink', 'Project'],
-      ['nasaSubmitLink', 'NASA page'],
-    ];
     return `
       <section class="card overflow-hidden">
         <div class="h-1 bg-purple-600"></div>
@@ -232,23 +225,10 @@ class Stage2TeamDetailPage {
               <dd class="mt-0.5">${team.actualSolution ? `<span class="badge badge-gray uppercase">${UI.escape(team.actualSolution)}</span>` : '<span class="text-slate-800">—</span>'}</dd>
             </div>
           </dl>
-          <div class="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-            ${links
-              .map(([key, label]) =>
-                team[key]
-                  ? `<a href="${UI.escape(this.safeUrl(team[key]))}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">${label} ${this.icons.external}</a>`
-                  : `<span class="inline-flex items-center justify-center rounded-lg border border-dashed border-slate-200 px-4 py-2 text-sm text-slate-400">No ${label.toLowerCase()}</span>`,
-              )
-              .join('')}
-          </div>
+          <div class="mt-5 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">${UI.teamLinkButtons(team)}</div>
         </div>
       </section>
     `;
-  }
-
-  static safeUrl(url) {
-    const value = String(url).trim();
-    return /^https?:\/\//i.test(value) ? value : `https://${value}`;
   }
 
   static renderQuestion(question, qi) {
@@ -297,10 +277,14 @@ class Stage2TeamDetailPage {
       <aside class="hidden lg:block">
         <div class="card sticky top-24">
           <div class="card-body space-y-5">
-            <div class="flex items-center justify-between">
+            ${
+              this.state.special
+                ? ''
+                : `<div class="flex items-center justify-between">
               <span class="text-sm font-medium text-slate-500">Time left</span>
               ${this.renderTimer()}
-            </div>
+            </div>`
+            }
             <div>
               <p class="text-sm text-slate-500">Average score</p>
               <p class="mt-1 text-4xl font-bold tracking-tight text-slate-900"><span data-score>—</span><span class="text-lg font-medium text-slate-400"> / 5</span></p>
@@ -330,7 +314,7 @@ class Stage2TeamDetailPage {
         <div class="mx-auto max-w-3xl px-4 py-3">
           <div class="mb-2.5 flex items-center justify-between gap-3 text-sm text-slate-600">
             <p class="min-w-0 truncate"><span data-answered class="font-semibold text-slate-900"></span> answered · avg <span class="font-semibold text-slate-900"><span data-score>—</span> / 5</span></p>
-            ${this.renderTimer()}
+            ${this.state.special ? '' : this.renderTimer()}
           </div>
           <div class="grid grid-cols-2 gap-2">
             <button data-submit onclick="Stage2TeamDetailPage.submitScore()" class="btn h-12 bg-purple-600 text-base text-white hover:bg-purple-700 focus-visible:ring-purple-500"></button>
@@ -418,7 +402,7 @@ class Stage2TeamDetailPage {
   static startTimer(minutes) {
     clearInterval(window.stage2RefreshInterval);
     const endsAt = Date.now() + minutes * 60000;
-    const tick = () => {
+    const tick = async () => {
       const timers = document.querySelectorAll('#stage2Root [data-timer]');
       const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
       if (!timers.length || left === 0) clearInterval(window.stage2RefreshInterval);
@@ -440,19 +424,28 @@ class Stage2TeamDetailPage {
         el.querySelector('[data-timer-text]').textContent = text;
       });
       if (left === 0) {
-        // Time's up: unanswered questions get the lowest rating (1) and the score is sent automatically
+        // Time's up (Stage 2 only): the current answers are submitted (unanswered get 1), then the judge is offered the next team
         const s = this.state;
-        if (s && !s.saving && s.answers.length && (s.dirty || !s.scoredIds.has(s.team._id))) {
+        if (!s || s.saving || !s.answers.length) return;
+        const pending = s.dirty || !s.scoredIds.has(s.team._id);
+        if (pending) {
           s.answers.forEach((v, qi) => {
             if (v !== null) return;
             s.answers[qi] = 1;
             document.getElementById(`q${qi}_1`).checked = true;
           });
-          UI.toast("Time's up. Unanswered questions were rated 1 and your score is being submitted.", 'warning', 6000);
-          this.submitScore();
-        } else {
-          UI.toast("Time's up.", 'warning', 6000);
+          if (!(await this.submitScore())) return;
         }
+        const next = this.nextTeam();
+        const go = await UI.confirm({
+          title: "Time's up",
+          message: pending
+            ? 'Your score was submitted automatically with your current answers. Unanswered questions were rated 1.'
+            : 'Your score for this team is already submitted.',
+          confirmText: next ? 'Go to next team' : 'Finish',
+          cancelText: 'Stay on this team',
+        });
+        if (go && this.state === s) this.goToNextTeam();
       }
     };
     window.stage2RefreshInterval = setInterval(tick, 1000);
@@ -505,8 +498,10 @@ class Stage2TeamDetailPage {
         `Score saved for ${s.team.name}.${next ? ` Next up: ${next.name}` : ' All your teams are scored.'}`,
         'success',
       );
+      return true;
     } catch (error) {
       UI.toast(`Failed to save score: ${error.message}`, 'error', 6000);
+      return false;
     } finally {
       s.saving = false;
       if (this.state === s) this.refresh();
