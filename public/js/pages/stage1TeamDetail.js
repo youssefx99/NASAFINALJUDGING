@@ -353,11 +353,10 @@ class Stage1TeamDetailPage {
       status.textContent = scored ? 'Scored' : 'Not scored yet';
     }
 
-    const closed = s.locked && scored && !s.dirty;
     root.querySelectorAll('[data-submit]').forEach((btn) => {
-      btn.disabled = s.saving || !count || answered < count || closed;
-      btn.title = closed ? "Time's up: the score is locked" : answered < count ? 'Answer every question to submit' : '';
-      btn.innerHTML = s.saving ? `${this.icons.spinner} Saving…` : closed ? 'Score locked' : scored ? 'Update score' : 'Submit score';
+      btn.disabled = s.saving || !count || answered < count;
+      btn.title = answered < count ? 'Answer every question to submit' : '';
+      btn.innerHTML = s.saving ? `${this.icons.spinner} Saving…` : scored ? 'Update score' : 'Submit score';
     });
     root.querySelectorAll('[data-next]').forEach((btn) => {
       btn.disabled = !scored || s.saving;
@@ -392,8 +391,7 @@ class Stage1TeamDetailPage {
     } catch (e) {}
     const total = minutes * 60;
     const endsAt = startedAt + total * 1000;
-    const expiredOnOpen = Date.now() >= endsAt;
-    const tick = async () => {
+    const tick = () => {
       const timers = document.querySelectorAll('#stage1Root [data-timer]');
       const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
       if (!timers.length || left === 0) clearInterval(window.stage1RefreshInterval);
@@ -408,40 +406,10 @@ class Stage1TeamDetailPage {
         el.querySelector('[data-timer-text]').textContent = text;
       });
       if (left === 0) {
-        // Time's up: answers are locked and anything not yet submitted is sent (unanswered count as "No")
-        const s = this.state;
-        if (!s || s.locked || !s.criteria.length) return;
-        s.locked = true;
-        const pending = s.dirty || !s.scoredIds.has(s.team._id);
-        if (pending) {
-          s.dirty = true;
-          s.answers.forEach((row, ci) =>
-            row.forEach((v, qi) => {
-              if (v !== null) return;
-              row[qi] = 0;
-              document.querySelector(`input[name="s1_${ci}_${qi}"][value="0"]`).checked = true;
-            }),
-          );
-        }
-        document.querySelectorAll('#scoringForm input').forEach((input) => (input.disabled = true));
-        const form = document.getElementById('scoringForm');
-        form.classList.add('pointer-events-none');
-        form.insertAdjacentHTML(
+        document.getElementById('scoringForm')?.insertAdjacentHTML(
           'afterbegin',
-          `<div class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">${this.icons.clock} Time's up: answers are locked.</div>`,
+          `<div class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">${this.icons.clock} Time's up: you are over the time for this team. You can still finish and submit your score.</div>`,
         );
-        this.refresh();
-        if (pending ? !(await this.submitScore()) : expiredOnOpen) return;
-        const next = this.nextTeam();
-        const go = await UI.confirm({
-          title: "Time's up",
-          message: pending
-            ? 'Your score was submitted automatically with your current answers. Unanswered questions were counted as "No".'
-            : 'Your score for this team is already submitted.',
-          confirmText: next ? 'Go to next team' : 'Finish',
-          cancelText: 'Stay on this team',
-        });
-        if (go && this.state === s) this.goToNextTeam();
       }
     };
     window.stage1RefreshInterval = setInterval(tick, 1000);
