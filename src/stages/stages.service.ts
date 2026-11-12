@@ -19,7 +19,7 @@ export class StagesService {
 
   async updateStage(name: string, updateData: any): Promise<Stage> {
     const stage = await this.stageModel
-      .findOneAndUpdate({ name }, updateData, { new: true, upsert: true })
+      .findOneAndUpdate({ name }, updateData, { new: true, upsert: true, runValidators: true })
       .exec();
 
     return stage;

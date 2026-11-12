@@ -6,6 +6,7 @@ import { Panel, PanelSchema } from '../schemas/panel.schema';
 import { Score, ScoreSchema } from '../schemas/score.schema';
 import { Team, TeamSchema } from '../schemas/team.schema';
 import { User, UserSchema } from '../schemas/user.schema';
+import { ScoresModule } from '../scores/scores.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { User, UserSchema } from '../schemas/user.schema';
       { name: Team.name, schema: TeamSchema },
       { name: User.name, schema: UserSchema },
     ]),
+    ScoresModule,
   ],
   controllers: [Stage2QualificationController],
   providers: [Stage2QualificationService],

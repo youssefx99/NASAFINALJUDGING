@@ -111,7 +111,10 @@ class Stage1ManagementPage {
 
   static applyStage(stage) {
     const source = stage && Array.isArray(stage.criteria) && stage.criteria.length ? stage.criteria : JSON.parse(JSON.stringify(this.DEFAULT_CRITERIA));
-    this.criteria = source.map((c) => ({ ...c, questions: Array.isArray(c.questions) ? c.questions : [] }));
+    this.criteria = source.map((c) => {
+      const questions = Array.isArray(c.questions) ? c.questions : [];
+      return { ...c, questions, questionTypes: questions.map((_, qi) => (c.questionTypes && c.questionTypes[qi]) || 'yesno') };
+    });
     const timer = document.getElementById('timerMinutes');
     timer.value = (stage && stage.timerMinutes) || 30;
     timer.disabled = false;
@@ -125,9 +128,13 @@ class Stage1ManagementPage {
     return Math.round((Number(weight) || 0) * 1000) / 10;
   }
 
+  static setup(c) {
+    return { types: c.questionTypes, scaleMax: c.scaleMax, yesNoWeight: c.yesNoWeight };
+  }
+
   static criterionMeta(c) {
     const n = c.questions.length;
-    return `${n} question${n === 1 ? '' : 's'} · up to ${n} point${n === 1 ? '' : 's'} · weighted score ${(n * (Number(c.weight) || 0)).toFixed(2)}`;
+    return `${n} question${n === 1 ? '' : 's'} (${UI.questionMixLabel(this.setup(c))}) · up to ${n} point${n === 1 ? '' : 's'} · weighted score ${(n * (Number(c.weight) || 0)).toFixed(2)}`;
   }
 
   static renderSummary() {
@@ -196,6 +203,7 @@ class Stage1ManagementPage {
                   <span class="w-6 shrink-0 text-right text-sm tabular-nums text-slate-400">${qi + 1}.</span>
                   <input id="q-${i}-${qi}" type="text" value="${UI.escape(q)}" placeholder="Enter question text…"
                     oninput="Stage1ManagementPage.updateQuestion(${i}, ${qi}, this.value)" class="input">
+                  ${UI.questionTypeSelect(c.questionTypes[qi], `Stage1ManagementPage.setScoring(${i}, ${qi}`)}
                   <button type="button" onclick="Stage1ManagementPage.removeQuestion(${i}, ${qi})" ${c.questions.length <= 1 ? 'disabled' : ''}
                     title="Remove question" aria-label="Remove question"
                     class="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40">
@@ -205,6 +213,7 @@ class Stage1ManagementPage {
                 )
                 .join('')}
             </div>
+            <div id="crit-mix-${i}" class="mt-3">${UI.scoringSetup(this.setup(c), `Stage1ManagementPage.setScoring(${i}, null`)}</div>
             <p id="crit-meta-${i}" class="mt-3 text-xs text-slate-500">${this.criterionMeta(c)}</p>
           </div>
         </div>
@@ -228,7 +237,7 @@ class Stage1ManagementPage {
 
   static addCriterion() {
     if (!this.loaded) return;
-    this.criteria.push({ name: 'New criterion', questions: [''], weight: 0.1 });
+    this.criteria.push({ name: 'New criterion', questions: [''], questionTypes: ['yesno'], weight: 0.1 });
     this.setDirty(true);
     this.renderCriteriaForm();
     this.focusInput(`crit-name-${this.criteria.length - 1}`);
@@ -265,6 +274,7 @@ class Stage1ManagementPage {
     const c = this.criteria[index];
     if (!c) return;
     c.questions.push('');
+    c.questionTypes.push('yesno');
     this.setDirty(true);
     this.renderCriteriaForm();
     this.focusInput(`q-${index}-${c.questions.length - 1}`);
@@ -274,8 +284,20 @@ class Stage1ManagementPage {
     const c = this.criteria[index];
     if (!c || c.questions.length <= 1) return;
     c.questions.splice(questionIndex, 1);
+    c.questionTypes.splice(questionIndex, 1);
     this.setDirty(true);
     this.renderCriteriaForm();
+  }
+
+  // A question's type, or the criterion's scale range / yes-no share
+  static setScoring(index, questionIndex, field, value) {
+    const c = this.criteria[index];
+    if (!c) return;
+    if (field === 'type') c.questionTypes[questionIndex] = value;
+    else c[field] = value;
+    if (field !== 'yesNoWeight') document.getElementById(`crit-mix-${index}`).innerHTML = UI.scoringSetup(this.setup(c), `Stage1ManagementPage.setScoring(${index}, null`);
+    document.getElementById(`crit-meta-${index}`).textContent = this.criterionMeta(c);
+    this.setDirty(true);
   }
 
   static updateQuestion(index, questionIndex, value) {

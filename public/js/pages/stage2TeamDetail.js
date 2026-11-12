@@ -1,4 +1,4 @@
-// Stage 2 / Special panel Team Detail Page (for Judges): 1–5 rating per question
+// Stage 2 / Special panel Team Detail Page (for Judges): a Yes/No answer or a 1–N rating per question
 class Stage2TeamDetailPage {
   static state = null;
   static loadSeq = 0;
@@ -90,6 +90,9 @@ class Stage2TeamDetailPage {
       scoredTeamIds = panel.scoredTeamIds;
       award = {
         questions: (panel.questions || []).map((q) => q.question),
+        questionTypes: (panel.questions || []).map((q) => q.type || 'scale'),
+        scaleMax: panel.scaleMax,
+        yesNoWeight: panel.yesNoWeight,
         scoringDescriptions: (panel.questions || []).map((q) => q.descriptions || {}),
       };
     } else {
@@ -121,6 +124,8 @@ class Stage2TeamDetailPage {
     const scoredIds = new Set(scoredTeamIds || []);
     if (saved) scoredIds.add(team._id);
     const questions = award.questions || [];
+    const types = questions.map((_, qi) => (award.questionTypes && award.questionTypes[qi]) || 'scale');
+    const scaleMax = award.scaleMax || 5;
 
     this.state = {
       team,
@@ -129,12 +134,16 @@ class Stage2TeamDetailPage {
       special,
       panelId,
       questions,
+      types,
+      scaleMax,
+      yesNoWeight: award.yesNoWeight ?? 0.5,
       descriptions: award.scoringDescriptions || [],
       scoredIds,
       teams: panelTeams || [],
       answers: questions.map((_, qi) => {
-        const value = Number(saved?.[qi]);
-        return value >= 1 && value <= 5 ? value : null;
+        const value = saved?.[qi];
+        const valid = types[qi] === 'scale' ? Number.isInteger(value) && value >= 1 && value <= scaleMax : value === 1 || value === 0;
+        return valid ? value : null;
       }),
       dirty: false,
       saving: false,
@@ -232,14 +241,31 @@ class Stage2TeamDetailPage {
 
   static renderQuestion(question, qi) {
     const value = this.state.answers[qi];
+    if (this.state.types[qi] !== 'scale') {
+      const option = (n, label, tone) => `
+          <label class="cursor-pointer">
+            <input type="radio" name="question_${qi}" id="q${qi}_${n}" value="${n}" data-qi="${qi}" class="peer sr-only" ${value === n ? 'checked' : ''}>
+            <span class="flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50 ${tone} peer-focus-visible:ring-2 peer-focus-visible:ring-purple-500 peer-focus-visible:ring-offset-2">${label}</span>
+          </label>`;
+      return `
+      <section id="s2q_${qi}" class="card p-4 transition-colors sm:p-5">
+        <p class="text-sm font-semibold leading-relaxed text-slate-900 sm:text-base"><span class="mr-1 text-purple-600">${qi + 1}.</span>${UI.escape(question)}</p>
+        <div class="mt-3 grid grid-cols-2 gap-2 sm:max-w-xs" role="radiogroup" aria-label="Question ${qi + 1}">
+          ${option(1, 'Yes', 'peer-checked:border-emerald-600 peer-checked:bg-emerald-600 peer-checked:text-white')}
+          ${option(0, 'No', 'peer-checked:border-rose-600 peer-checked:bg-rose-600 peer-checked:text-white')}
+        </div>
+      </section>
+    `;
+    }
     const descriptions = this.state.descriptions[qi] || {};
-    const hasDescriptions = [1, 2, 3, 4, 5].some((n) => descriptions[`score${n}`]);
-    const options = [1, 2, 3, 4, 5]
+    const levels = Array.from({ length: this.state.scaleMax }, (_, i) => i + 1);
+    const hasDescriptions = levels.some((n) => descriptions[`score${n}`]);
+    const options = levels
       .map((n) => {
         const input = `<input type="radio" name="question_${qi}" id="q${qi}_${n}" value="${n}" data-qi="${qi}" class="peer sr-only" ${value === n ? 'checked' : ''}>`;
         if (!hasDescriptions) {
           return `
-            <label class="cursor-pointer">
+            <label class="min-w-0 flex-1 cursor-pointer">
               ${input}
               <span class="flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white text-lg font-semibold text-slate-700 transition-colors hover:border-purple-300 hover:bg-purple-50 peer-checked:border-purple-600 peer-checked:bg-purple-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-purple-500 peer-focus-visible:ring-offset-2">${n}</span>
             </label>`;
@@ -261,7 +287,7 @@ class Stage2TeamDetailPage {
         <p class="text-sm font-semibold leading-relaxed text-slate-900 sm:text-base"><span class="mr-1 text-purple-600">${qi + 1}.</span>${UI.escape(question)}</p>
         ${hasDescriptions
           ? `<div class="mt-3 space-y-2" role="radiogroup" aria-label="Question ${qi + 1}">${options}</div>`
-          : `<div class="mt-3 grid grid-cols-5 gap-2" role="radiogroup" aria-label="Question ${qi + 1}">${options}</div>
+          : `<div class="mt-3 flex gap-1.5 sm:gap-2" role="radiogroup" aria-label="Question ${qi + 1}">${options}</div>
              <div class="mt-1.5 flex justify-between px-1 text-xs text-slate-400"><span>Low</span><span>High</span></div>`}
       </section>
     `;
@@ -286,7 +312,7 @@ class Stage2TeamDetailPage {
           <div class="card-body space-y-5">
             ${this.state.special ? '' : this.renderTimer(true)}
             <div>
-              <p class="text-sm text-slate-500">Average score</p>
+              <p class="text-sm text-slate-500">Current score</p>
               <p class="mt-1 text-4xl font-bold tracking-tight text-slate-900"><span data-score>—</span><span class="text-lg font-medium text-slate-400"> / 5</span></p>
             </div>
             <div>
@@ -313,7 +339,7 @@ class Stage2TeamDetailPage {
         <div class="progress h-1 rounded-none"><div data-progress class="progress-bar rounded-none bg-purple-600" style="width: 0%"></div></div>
         <div class="mx-auto max-w-3xl px-4 py-3">
           <div class="mb-2.5 flex items-center justify-between gap-3 text-sm text-slate-600">
-            <p class="min-w-0 truncate"><span data-answered class="font-semibold text-slate-900"></span> answered · avg <span class="font-semibold text-slate-900"><span data-score>—</span> / 5</span></p>
+            <p class="min-w-0 truncate"><span data-answered class="font-semibold text-slate-900"></span> answered · <span class="font-semibold text-slate-900"><span data-score>—</span> / 5</span></p>
             ${this.state.special ? '' : this.renderTimer()}
           </div>
           <div class="grid grid-cols-2 gap-2">
@@ -335,6 +361,13 @@ class Stage2TeamDetailPage {
     this.refresh();
   }
 
+  // Same as the server: 5 × the criterion result; answeredOnly scores just the questions answered so far
+  static computeScore(answeredOnly = false) {
+    const s = this.state;
+    const keep = s.answers.map((v) => !answeredOnly || v !== null);
+    return 5 * UI.criterionFraction(s.answers.filter((_, qi) => keep[qi]), s.types.filter((_, qi) => keep[qi]), s.scaleMax, s.yesNoWeight);
+  }
+
   static nextTeam() {
     const { teams, scoredIds, team } = this.state;
     const idx = teams.findIndex((t) => t._id === team._id);
@@ -349,7 +382,7 @@ class Stage2TeamDetailPage {
 
     const picked = s.answers.filter((v) => v !== null);
     const count = s.answers.length;
-    const average = picked.length ? (picked.reduce((sum, v) => sum + v, 0) / picked.length).toFixed(2) : '—';
+    const average = picked.length ? this.computeScore(true).toFixed(2) : '—';
     const scored = s.scoredIds.has(s.team._id);
     const next = this.nextTeam();
 
@@ -455,7 +488,7 @@ class Stage2TeamDetailPage {
     }
 
     const scores = [...s.answers];
-    const averageScore = scores.reduce((sum, v) => sum + v, 0) / scores.length;
+    const averageScore = this.computeScore();
 
     s.saving = true;
     this.refresh();

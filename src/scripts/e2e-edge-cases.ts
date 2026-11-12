@@ -87,6 +87,7 @@ async function main() {
 
   let j4: any;
   let originalWeight: number | undefined;
+  let stagesChanged = false;
   const criteriaPanels: any[] = [];
   try {
     // ---------- Assignments ----------
@@ -320,6 +321,79 @@ async function main() {
     check('special winners: panel without scores has no winner', special.find((p) => p.panelId === spEmpty._id)?.winnerTeam === null);
     check('special winners: judges refused (403)', (await api('GET', '/api/winners/special', t1)).status === 403);
 
+    // ---------- Question types: Yes/No and scale questions, custom scale, yes/no share ----------
+    const round9 = (value: number) => Math.round(value * 1e9) / 1e9;
+    const c0Yes = c0.questions.length;
+    const typedStage1 = stage1.criteria.map((c: any, i: number) =>
+      i === 0
+        ? { ...c, questions: [...c.questions, 'Scale A', 'Scale B'], questionTypes: [...c.questions.map(() => 'yesno'), 'scale', 'scale'], scaleMax: 7, yesNoWeight: 0.4 }
+        : c,
+    );
+    stagesChanged = true;
+    r = await api('PUT', '/api/stages/Stage%201', admin, { criteria: typedStage1 });
+    const saved0 = r.json?.criteria?.[0];
+    check('types: Stage 1 criterion saved with Yes/No + scale questions, scale 1–7, 40/60 split', r.status === 200 && JSON.stringify(saved0.questionTypes) === JSON.stringify(typedStage1[0].questionTypes) && saved0.scaleMax === 7 && saved0.yesNoWeight === 0.4 && saved0._id === c0._id, `${r.status} ${JSON.stringify(saved0).slice(0, 200)}`);
+    for (const [name, patch] of [
+      ['unknown question type', { questionTypes: ['bogus'] }], ['scale 1–1', { scaleMax: 1 }], ['scale 1–11', { scaleMax: 11 }],
+      ['yes/no share above 100%', { yesNoWeight: 1.5 }], ['negative yes/no share', { yesNoWeight: -0.1 }],
+    ] as Array<[string, object]>) {
+      r = await api('PUT', '/api/stages/Stage%201', admin, { criteria: typedStage1.map((c: any, i: number) => (i === 0 ? { ...c, ...patch } : c)) });
+      check(`types: ${name} rejected (400)`, r.status === 400, `got ${r.status}`);
+    }
+    const stage1Now = (await api('GET', '/api/stages/Stage%201', t4)).json;
+    check('types: rejected saves leave the criteria unchanged; judges read the types', JSON.stringify(stage1Now.criteria[0].questionTypes) === JSON.stringify(typedStage1[0].questionTypes) && stage1Now.criteria[0].scaleMax === 7);
+    // Delta: j4 scores every criterion (one of its panels selects all)
+    const c0Answers = [...c0.questions.map((_: any, i: number) => (i % 2 ? 0 : 1)), 7, 3];
+    const typedAnswers = Object.fromEntries(typedStage1.map((c: any, i: number) => [c.name, i === 0 ? c0Answers : c.questions.map(() => 1)]));
+    r = await api('POST', '/api/scores', t4, { teamId: team('Delta')._id, stage: 1, scores: typedAnswers });
+    const yesShare = c0Answers.slice(0, c0Yes).reduce((a, b) => a + b, 0) / c0Yes;
+    const c0Points = (c0Yes + 2) * (0.4 * yesShare + 0.6 * ((7 + 3) / (2 * 7)));
+    const pointsOf = (c: any, i: number) => (i === 0 ? c0Points : c.questions.length);
+    const want1 = (typedStage1.reduce((sum: number, c: any, i: number) => sum + pointsOf(c, i) * c.weight, 0) / typedStage1.reduce((sum: number, c: any) => sum + c.questions.length * c.weight, 0)) * 5;
+    check('types: Stage 1 mixed criterion scored exactly (yes/no 40%, scale v/7 60%, points × weight)', r.status === 201 && Math.abs(r.json.totalScore - want1) < 1e-9 && r.json.totalScore === round9(r.json.totalScore) && Math.abs(r.json.criteriaScores[c0.name] - c0Points) < 1e-9, `${r.status} ${r.json?.totalScore} vs ${want1}`);
+    for (const [name, value, index] of [['scale answer 0', 0, c0Yes], ['scale answer 8 on 1–7', 8, c0Yes], ['yes/no answer 2', 2, 0], ['fractional scale answer', 6.5, c0Yes + 1]] as Array<[string, number, number]>) {
+      const answers = [...c0Answers];
+      answers[index] = value;
+      r = await api('POST', '/api/scores', t4, { teamId: team('Delta')._id, stage: 1, scores: { ...typedAnswers, [c0.name]: answers } });
+      check(`types: Stage 1 ${name} rejected (400)`, r.status === 400, `got ${r.status}`);
+    }
+    r = await api('POST', '/api/scores', t4, { teamId: team('Delta')._id, stage: 1, scores: Object.fromEntries(typedStage1.map((c: any, i: number) => [c.name, i === 0 ? [...c0.questions.map(() => 1), 7, 7] : c.questions.map(() => 1)])) });
+    check('types: Stage 1 top answers on every type = 5.00', r.status === 201 && r.json.totalScore === 5, `${r.json?.totalScore}`);
+
+    const typedStage2 = stage2.criteria.map((c: any) =>
+      c.name === awardA.awardType ? { ...c, questions: ['Y1', 'Y2', 'S1', 'S2', 'S3'], questionTypes: ['yesno', 'yesno', 'scale', 'scale', 'scale'], scaleMax: 10, yesNoWeight: 0.25 } : c,
+    );
+    r = await api('PUT', '/api/stages/Stage%202', admin, { criteria: typedStage2 });
+    check('types: Stage 2 award saved with scale 1–10 and a 25/75 split', r.status === 200 && r.json.criteria.find((c: any) => c.name === awardA.awardType)?.scaleMax === 10);
+    r = await api('POST', '/api/scores', t1, { teamId: team('Alpha')._id, stage: 2, panelId: awardA._id, scores: { [awardA.awardType]: [1, 0, 10, 5, 6] } });
+    check('types: Stage 2 mixed award = 5 × (25% × 1/2 + 75% × 21/30) = 3.25', r.status === 201 && r.json.totalScore === 3.25, `${r.status} ${r.json?.totalScore}`);
+    for (const [name, answers] of [['rating 11 on 1–10', [1, 0, 11, 5, 6]], ['yes/no answer 5', [5, 0, 10, 5, 6]], ['rating 0', [1, 0, 0, 5, 6]]] as Array<[string, number[]]>) {
+      r = await api('POST', '/api/scores', t1, { teamId: team('Alpha')._id, stage: 2, panelId: awardA._id, scores: { [awardA.awardType]: answers } });
+      check(`types: Stage 2 ${name} rejected (400)`, r.status === 400, `got ${r.status}`);
+    }
+    const bCount = answersFor(awardB.awardType, 1).length;
+    const bAnswers = answersFor(awardB.awardType, 5).map((v: number, i: number) => (i === 0 ? 4 : v));
+    r = await api('POST', '/api/scores', t1, { teamId: team('Alpha')._id, stage: 2, panelId: awardB._id, scores: { [awardB.awardType]: bAnswers } });
+    check('types: untyped Stage 2 award is still the plain 1–5 average, rounded exactly', r.status === 201 && r.json.totalScore === round9((5 * bCount - 1) / bCount), `${r.json?.totalScore} vs ${round9((5 * bCount - 1) / bCount)}`);
+
+    const spTyped = (await api('POST', '/api/panels', admin, { name: `${tag} Typed`, stage: 3, judges: [j1._id], teams: [team('Delta')._id], awardCriteria: [{ question: 'Works?', type: 'yesno' }, { question: 'Quality', type: 'scale' }], scaleMax: 6, yesNoWeight: 0.5 })).json;
+    criteriaPanels.push(spTyped);
+    const spView = (await api('GET', '/api/judges/assigned-teams', t1)).json.specialPanels.find((p: any) => p._id === spTyped._id);
+    check('types: judge sees the special panel question types and scale', JSON.stringify(spView?.questions.map((q: any) => q.type)) === '["yesno","scale"]' && spView.scaleMax === 6 && spView.yesNoWeight === 0.5, JSON.stringify(spView));
+    r = await api('POST', '/api/scores', t1, { teamId: team('Delta')._id, stage: 3, panelId: spTyped._id, scores: { [spTyped._id]: [1, 3] } });
+    check('types: special Yes + 3 of 6 = 5 × (50% + 50% × 3/6) = 3.75', r.status === 201 && r.json.totalScore === 3.75, `${r.json?.totalScore}`);
+    r = await api('POST', '/api/scores', t1, { teamId: team('Delta')._id, stage: 3, panelId: spTyped._id, scores: { [spTyped._id]: [3, 3] } });
+    check('types: special yes/no answer 3 rejected (400)', r.status === 400, `got ${r.status}`);
+    for (const [name, body] of [['unknown question type', { awardCriteria: [{ question: 'x', type: 'stars' }] }], ['scale 1–12', { awardCriteria: [{ question: 'x', type: 'scale' }], scaleMax: 12 }], ['yes/no share 200%', { awardCriteria: [{ question: 'x', type: 'yesno' }], yesNoWeight: 2 }]] as Array<[string, object]>) {
+      r = await api('POST', '/api/panels', admin, { name: `${tag} bad ${name}`, stage: 3, judges: [], teams: [], ...body });
+      if (r.json?._id) criteriaPanels.push(r.json);
+      check(`types: special panel with ${name} rejected (400)`, r.status === 400, `got ${r.status}`);
+    }
+    const spDefault = (await api('POST', '/api/panels', admin, { name: `${tag} Default split`, stage: 3, judges: [j1._id], teams: [team('Delta')._id], awardCriteria: [{ question: 'Y', type: 'yesno' }, { question: 'S', type: 'scale' }] })).json;
+    criteriaPanels.push(spDefault);
+    r = await api('POST', '/api/scores', t1, { teamId: team('Delta')._id, stage: 3, panelId: spDefault._id, scores: { [spDefault._id]: [1, 1] } });
+    check('types: no split set = 50/50 and scale 1–5: Yes + 1 of 5 = 3.00', r.status === 201 && r.json.totalScore === 3, `${r.json?.totalScore}`);
+
     // ---------- Excel export data ----------
     const exportRes = await fetch(`${BASE}/api/export`, { headers: { Authorization: `Bearer ${admin}`, 'Accept-Encoding': 'gzip' } });
     const exportData = await exportRes.json();
@@ -348,6 +422,10 @@ async function main() {
     for (const panel of [p1, p1b, sp, spEmpty, ...criteriaPanels]) if (panel?._id) await api('DELETE', `/api/panels/${panel._id}`, admin);
     for (const judge of [j1, j2, j3, j4]) if (judge?._id) await api('DELETE', `/api/users/${judge._id}`, admin);
     if (originalWeight !== undefined) await api('PUT', '/api/stages/final-weights', admin, { stage1: originalWeight });
+    if (stagesChanged) {
+      await api('PUT', '/api/stages/Stage%201', admin, { criteria: stage1.criteria });
+      await api('PUT', '/api/stages/Stage%202', admin, { criteria: stage2.criteria });
+    }
     for (const t of teams) await api('DELETE', `/api/teams/${t._id}`, admin);
     const leftovers = ((await api('GET', '/api/teams', admin)).json as any[]).filter((t) => t.name.startsWith(tag)).length;
     const restored = (await api('GET', `/api/panels/${awardPanels[0]._id}`, admin)).json;

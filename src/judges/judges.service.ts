@@ -21,7 +21,7 @@ export class JudgesService {
     const [judge, assignedPanels, scores] = await Promise.all([
       this.userModel.findById(judgeId, { role: 1 }).lean().exec(),
       this.panelModel
-        .find({ judges: judgeId }, { stage: 1, teams: 1, awardType: 1, name: 1, awardCriteria: 1, criteria: 1 })
+        .find({ judges: judgeId }, { stage: 1, teams: 1, awardType: 1, name: 1, awardCriteria: 1, criteria: 1, scaleMax: 1, yesNoWeight: 1 })
         .lean()
         .exec(),
       this.scoreModel
@@ -77,7 +77,9 @@ export class JudgesService {
       specialPanels: specialPanels.map((panel) => ({
         _id: String(panel._id),
         name: panel.name,
-        questions: (panel.awardCriteria || []).map((q) => ({ question: q.question, descriptions: q.descriptions })),
+        questions: (panel.awardCriteria || []).map((q) => ({ question: q.question, type: q.type, descriptions: q.descriptions })),
+        scaleMax: panel.scaleMax,
+        yesNoWeight: panel.yesNoWeight,
         teams: panelTeams(panel),
         scoredTeamIds: scores
           .filter((score) => score.stage === 3 && String(score.panel) === String(panel._id))

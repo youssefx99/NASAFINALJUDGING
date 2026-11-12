@@ -149,7 +149,7 @@ class DashboardPage {
         document.getElementById(`${key}Subtitle`).innerHTML =
             stage === 2 && DashboardPage.panels[key]
                 ? `Award category: <span class="font-medium text-purple-700">${UI.escape(DashboardPage.panels[key].awardType || DashboardPage.panels[key].name)}</span> · ${teams.length - scoredCount} remaining`
-                : `${teams.length - scoredCount} remaining${stage === 3 ? ' · rate each question 1–5' : ''}`;
+                : `${teams.length - scoredCount} remaining${stage === 3 ? ' · answer every question' : ''}`;
 
         const list = document.getElementById(`${key}List`);
         if (teams.length === 0) {

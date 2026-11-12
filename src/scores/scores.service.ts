@@ -10,6 +10,7 @@ import { Team, TeamDocument } from '../schemas/team.schema';
 import { Panel, stage1CriteriaIds } from '../schemas/panel.schema';
 import { Stage } from '../schemas/stage.schema';
 import { StagesService } from '../stages/stages.service';
+import { criterionFraction, QuestionType, roundScore } from '../common/scoring';
 
 @Injectable()
 export class ScoresService {
@@ -42,7 +43,7 @@ export class ScoresService {
       this.panelModel
         .find(
           { stage, judges: judgeId, teams: teamId, ...(hasPanelId ? { _id: panelId } : {}) },
-          { awardType: 1, awardCriteria: 1, criteria: 1 },
+          { awardType: 1, awardCriteria: 1, criteria: 1, scaleMax: 1, yesNoWeight: 1 },
         )
         .limit(stage === 1 ? 0 : 2)
         .lean()
@@ -67,30 +68,37 @@ export class ScoresService {
 
     const submitted =
       scoreData.scores && typeof scoreData.scores === 'object' ? scoreData.scores : {};
-    const readAnswers = (name: string, count: number, valid: (value: number) => boolean) => {
+    // Yes/no answers are 0 or 1, scale answers 1..scaleMax
+    const readAnswers = (name: string, types: QuestionType[], scaleMax: number) => {
       const answers = submitted[name];
       if (
         !Array.isArray(answers) ||
-        answers.length !== count ||
-        !answers.every((value) => Number.isInteger(value) && valid(value))
+        answers.length !== types.length ||
+        !answers.every(
+          (value, i) =>
+            Number.isInteger(value) && (types[i] === 'scale' ? value >= 1 && value <= scaleMax : value === 0 || value === 1),
+        )
       ) {
         throw new BadRequestException(`Invalid answers for "${name}"`);
       }
       return answers as number[];
     };
+    const typesOf = (criterion: { questions: string[]; questionTypes?: QuestionType[] }, fallback: QuestionType) =>
+      criterion.questions.map((_, i) => criterion.questionTypes?.[i] || fallback);
 
     const scores: Record<string, number[]> = {};
     const criteriaScores: Record<string, number> = {};
     let totalScore: number;
     let awardType: string | undefined;
     if (stage === 3) {
-      const questionCount = (panel.awardCriteria || []).length;
-      if (questionCount === 0) {
+      const types = (panel.awardCriteria || []).map((q) => q.type || 'scale');
+      if (types.length === 0) {
         throw new BadRequestException('This special panel has no questions yet');
       }
-      const answers = readAnswers(String(panel._id), questionCount, (v) => v >= 1 && v <= 5);
+      const scaleMax = panel.scaleMax || 5;
+      const answers = readAnswers(String(panel._id), types, scaleMax);
       scores[String(panel._id)] = answers;
-      totalScore = answers.reduce((sum, v) => sum + v, 0) / answers.length;
+      totalScore = roundScore(5 * criterionFraction(answers, types, scaleMax, panel.yesNoWeight ?? 0.5));
     } else if (stage === 1) {
       const selected = stage1CriteriaIds(candidates);
       const criteria = stageDoc!.criteria.filter((c) => !selected || selected.has(String(c._id)));
@@ -99,23 +107,28 @@ export class ScoresService {
       }
       let total = 0;
       let max = 0;
+      // Every question is worth 1 point times its criterion weight; criteriaScores holds each criterion's points
       for (const criterion of criteria) {
-        const answers = readAnswers(criterion.name, criterion.questions.length, (v) => v === 0 || v === 1);
+        const types = typesOf(criterion, 'yesno');
+        const answers = readAnswers(criterion.name, types, criterion.scaleMax || 5);
         scores[criterion.name] = answers;
-        criteriaScores[criterion.name] = answers.reduce((sum, v) => sum + v, 0);
-        total += criteriaScores[criterion.name] * criterion.weight;
+        const points = answers.length * criterionFraction(answers, types, criterion.scaleMax || 5, criterion.yesNoWeight ?? 0.5);
+        criteriaScores[criterion.name] = roundScore(points);
+        total += points * criterion.weight;
         max += answers.length * criterion.weight;
       }
-      totalScore = max > 0 ? (total / max) * 5 : 0;
+      totalScore = max > 0 ? roundScore((total / max) * 5) : 0;
     } else {
       awardType = panel.awardType;
       const criterion = stageDoc!.criteria.find((c) => c.name === awardType);
       if (!criterion || criterion.questions.length === 0) {
         throw new BadRequestException('Award criteria are not configured');
       }
-      const answers = readAnswers(criterion.name, criterion.questions.length, (v) => v >= 1 && v <= 5);
+      const types = typesOf(criterion, 'scale');
+      const scaleMax = criterion.scaleMax || 5;
+      const answers = readAnswers(criterion.name, types, scaleMax);
       scores[criterion.name] = answers;
-      totalScore = answers.reduce((sum, v) => sum + v, 0) / answers.length;
+      totalScore = roundScore(5 * criterionFraction(answers, types, scaleMax, criterion.yesNoWeight ?? 0.5));
     }
 
     return await this.scoreModel
@@ -305,7 +318,7 @@ export class ScoresService {
           bestAward: award,
         });
       } else {
-        if (record.awardAverage > current.averageScore) {
+        if (roundScore(record.awardAverage) > roundScore(current.averageScore)) {
           current.averageScore = record.awardAverage;
           current.bestAward = award;
         }
@@ -313,15 +326,15 @@ export class ScoresService {
       }
     }
 
-    // Scored teams first (by score desc), then unscored teams in original order
-    const rank = <T>(rows: T[], hasScore: (row: T) => boolean, score: (row: T) => number) =>
+    // Scored teams first by score (more judges, then team name, break ties), then unscored teams by name
+    const rank = <T extends { name: string; judgeCount?: number }>(rows: T[], hasScore: (row: T) => boolean, score: (row: T) => number) =>
       rows
-        .sort((a, b) => {
-          if (hasScore(a) && !hasScore(b)) return -1;
-          if (!hasScore(a) && hasScore(b)) return 1;
-          if (hasScore(a) && hasScore(b)) return score(b) - score(a);
-          return 0;
-        })
+        .sort(
+          (a, b) =>
+            Number(hasScore(b)) - Number(hasScore(a)) ||
+            (hasScore(a) ? score(b) - score(a) || (b.judgeCount || 0) - (a.judgeCount || 0) : 0) ||
+            a.name.localeCompare(b.name, undefined, { numeric: true }),
+        )
         .slice(0, limit);
 
     if (stage === 'final') {
@@ -334,10 +347,10 @@ export class ScoresService {
           _id: team._id,
           name: team.name,
           challenge: team.challenge,
-          stage1Score,
-          stage2BestScore,
+          stage1Score: roundScore(stage1Score),
+          stage2BestScore: roundScore(stage2BestScore),
           bestAward: stage2BestScore > 0 ? stage2!.bestAward : 'N/A',
-          finalScore: weights!.stage1 * stage1Score + weights!.stage2 * stage2BestScore,
+          finalScore: roundScore(weights!.stage1 * stage1Score + weights!.stage2 * stage2BestScore),
           hasStage1Score: stage1Score > 0,
           hasStage2Score: stage2BestScore > 0,
           hasAnyScore: stage1Score > 0 || stage2BestScore > 0,
@@ -353,7 +366,7 @@ export class ScoresService {
         _id: team._id,
         name: team.name,
         challenge: team.challenge,
-        averageScore: teamScore?.averageScore || 0,
+        averageScore: roundScore(teamScore?.averageScore || 0),
         judgeCount: teamScore?.judgeCount || 0,
         hasScore: !!teamScore,
       };
@@ -384,7 +397,7 @@ export class ScoresService {
           _id: team._id,
           name: team.name,
           challenge: team.challenge,
-          averageScore: result?.averageScore || 0,
+          averageScore: roundScore(result?.averageScore || 0),
           judgeCount: result?.judgeCount || 0,
           hasScore: !!result,
         };

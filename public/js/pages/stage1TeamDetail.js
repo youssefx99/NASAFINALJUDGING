@@ -66,13 +66,19 @@ class Stage1TeamDetailPage {
     const saved = score && score.scores ? score.scores : null;
     // Only the criteria selected for this team's panel (null = all Stage 1 criteria)
     const criteriaIds = assignedTeam.criteriaIds;
-    const criteria = (stage.criteria || []).filter((c) => !criteriaIds || criteriaIds.includes(c._id)).map((c) => ({
-      name: c.name,
-      weight: c.weight,
-      questions: Array.isArray(c.questions)
+    const criteria = (stage.criteria || []).filter((c) => !criteriaIds || criteriaIds.includes(c._id)).map((c) => {
+      const questions = Array.isArray(c.questions)
         ? c.questions
-        : Array.from({ length: c.questions || 0 }, (_, i) => `Question ${i + 1}`),
-    }));
+        : Array.from({ length: c.questions || 0 }, (_, i) => `Question ${i + 1}`);
+      return {
+        name: c.name,
+        weight: c.weight,
+        questions,
+        types: questions.map((_, qi) => (c.questionTypes && c.questionTypes[qi]) || 'yesno'),
+        scaleMax: c.scaleMax || 5,
+        yesNoWeight: c.yesNoWeight ?? 0.5,
+      };
+    });
     const scoredIds = new Set(assigned.stage1ScoredTeamIds || []);
     if (saved) scoredIds.add(team._id);
 
@@ -84,7 +90,8 @@ class Stage1TeamDetailPage {
       answers: criteria.map((c) =>
         c.questions.map((_, qi) => {
           const value = saved?.[c.name]?.[qi];
-          return value === 1 || value === 0 ? value : null;
+          const valid = c.types[qi] === 'scale' ? Number.isInteger(value) && value >= 1 && value <= c.scaleMax : value === 1 || value === 0;
+          return valid ? value : null;
         }),
       ),
       dirty: false,
@@ -195,15 +202,34 @@ class Stage1TeamDetailPage {
           <span id="s1c_${ci}" class="badge badge-gray"></span>
         </div>
         <div class="space-y-2 p-3 sm:p-4">
-          ${criterion.questions.map((question, qi) => this.renderQuestion(question, ci, qi)).join('')}
+          ${criterion.questions.map((question, qi) => this.renderQuestion(question, ci, qi, criterion)).join('')}
         </div>
       </section>
     `;
   }
 
-  static renderQuestion(question, ci, qi) {
+  static renderQuestion(question, ci, qi, criterion) {
     const value = this.state.answers[ci][qi];
     const name = `s1_${ci}_${qi}`;
+    if (criterion.types[qi] === 'scale') {
+      return `
+      <div id="s1q_${ci}_${qi}" class="rounded-lg border border-slate-200 p-3 transition-colors">
+        <p class="text-sm leading-relaxed text-slate-800"><span class="mr-1 font-semibold text-slate-400">${qi + 1}.</span>${UI.escape(question)}</p>
+        <div class="mt-3 flex gap-1.5 sm:gap-2" role="radiogroup" aria-label="Question ${qi + 1}">
+          ${Array.from({ length: criterion.scaleMax }, (_, i) => i + 1)
+            .map(
+              (n) => `
+          <label class="min-w-0 flex-1 cursor-pointer">
+            <input type="radio" name="${name}" value="${n}" data-ci="${ci}" data-qi="${qi}" class="peer sr-only" ${value === n ? 'checked' : ''}>
+            <span class="flex h-11 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 peer-checked:border-blue-600 peer-checked:bg-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2">${n}</span>
+          </label>`,
+            )
+            .join('')}
+        </div>
+        <div class="mt-1.5 flex justify-between px-1 text-xs text-slate-400"><span>Low</span><span>High</span></div>
+      </div>
+    `;
+    }
     return `
       <div id="s1q_${ci}_${qi}" class="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 transition-colors sm:flex-row sm:items-center sm:gap-4">
         <p class="flex-1 text-sm leading-relaxed text-slate-800"><span class="mr-1 font-semibold text-slate-400">${qi + 1}.</span>${UI.escape(question)}</p>
@@ -297,13 +323,14 @@ class Stage1TeamDetailPage {
     let answered = 0;
     let count = 0;
     const criteriaScores = {};
+    // Same as the server: each question is worth 1 point times its criterion weight
     criteria.forEach((c, ci) => {
-      const yes = answers[ci].filter((v) => v === 1).length;
+      const points = c.questions.length * UI.criterionFraction(answers[ci], c.types, c.scaleMax, c.yesNoWeight);
       answered += answers[ci].filter((v) => v !== null).length;
       count += c.questions.length;
-      total += yes * c.weight;
+      total += points * c.weight;
       max += c.questions.length * c.weight;
-      criteriaScores[c.name] = yes;
+      criteriaScores[c.name] = points;
     });
     // Normalized to a 5-point scale
     return { score: max > 0 ? (total / max) * 5 : 0, answered, count, criteriaScores };
@@ -340,8 +367,13 @@ class Stage1TeamDetailPage {
       const done = s.answers[ci].filter((v) => v !== null).length;
       const yes = s.answers[ci].filter((v) => v === 1).length;
       const complete = done === c.questions.length;
+      const points = Math.round(c.questions.length * UI.criterionFraction(s.answers[ci], c.types, c.scaleMax, c.yesNoWeight) * 100) / 100;
       badge.className = complete ? 'badge badge-green' : 'badge badge-gray';
-      badge.textContent = complete ? `${yes}/${c.questions.length} yes` : `${done}/${c.questions.length} answered`;
+      badge.textContent = !complete
+        ? `${done}/${c.questions.length} answered`
+        : c.types.includes('scale')
+          ? `${points}/${c.questions.length} points`
+          : `${yes}/${c.questions.length} yes`;
     });
 
     const status = document.getElementById('s1Status');
@@ -439,7 +471,7 @@ class Stage1TeamDetailPage {
 
     const scores = {};
     s.criteria.forEach((c, ci) => {
-      scores[c.name] = s.answers[ci].map((v) => (v === 1 ? 1 : 0));
+      scores[c.name] = [...s.answers[ci]];
     });
     const { score, criteriaScores } = this.computeScore();
 

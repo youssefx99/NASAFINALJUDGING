@@ -5,6 +5,7 @@ import { Panel, PanelDocument } from '../schemas/panel.schema';
 import { Score, ScoreDocument } from '../schemas/score.schema';
 import { Team, TeamDocument } from '../schemas/team.schema';
 import { StagesService } from '../stages/stages.service';
+import { roundScore } from '../common/scoring';
 
 export interface Winner {
   awardType: string;
@@ -165,6 +166,7 @@ export class WinnersService {
         ])
         .exec(),
     ]);
+    specialAverages.forEach((record) => (record.averageScore = roundScore(record.averageScore)));
     return specialPanels.map((panel) => ({
       panel,
       teams: specialAverages
@@ -222,7 +224,7 @@ export class WinnersService {
     for (const record of awardAverages) {
       const teamId = String(record._id.team);
       const best = bestAwardByTeam.get(teamId);
-      if (record.averageScore > (best?.average || 0)) {
+      if (roundScore(record.averageScore) > roundScore(best?.average || 0)) {
         bestAwardByTeam.set(teamId, {
           award: record._id.awardType,
           average: record.averageScore,
@@ -252,13 +254,13 @@ export class WinnersService {
         stage1Score: stage1Percent,
         stage2BestScore: stage2Percent,
         stage2BestAward: best.award,
-        finalScore: stage1Percent * weights.stage1 + stage2Percent * weights.stage2,
+        finalScore: roundScore(stage1Percent * weights.stage1 + stage2Percent * weights.stage2),
         judgeCount: best.judgeCount,
       };
     });
 
     // Sort by final score (highest first)
-    return teamFinalScores.sort((a, b) => b.finalScore - a.finalScore);
+    return teamFinalScores.sort((a, b) => b.finalScore - a.finalScore || a.team.name.localeCompare(b.team.name, undefined, { numeric: true }));
   }
 
   /**
@@ -361,7 +363,7 @@ export class WinnersService {
 
     awardAverages.forEach((record) => {
       const teamId = record._id.team.toString();
-      const awardAvg = record.awardAverage;
+      const awardAvg = roundScore(record.awardAverage);
 
       if (!teamBestScores.has(teamId)) {
         teamBestScores.set(teamId, {

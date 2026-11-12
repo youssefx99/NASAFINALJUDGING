@@ -1,6 +1,12 @@
 // Stage 2 Management Page - award-specific criteria
 class Stage2ManagementPage {
-  static SCORES = [1, 2, 3, 4, 5];
+  static levels(scaleMax = 5) {
+    return Array.from({ length: scaleMax }, (_, i) => i + 1);
+  }
+
+  static typesOf(award) {
+    return (award.questions || []).map((_, qi) => (award.questionTypes && award.questionTypes[qi]) || 'scale');
+  }
 
   static PLACEHOLDERS = [
     'Meets elite threshold (good advanced performance)',
@@ -69,7 +75,7 @@ class Stage2ManagementPage {
           <div class="card-header flex-nowrap">
             <div class="min-w-0">
               <h3 id="modalAwardTitle" class="card-title truncate"></h3>
-              <p class="mt-0.5 text-sm text-slate-500">Each question is scored 1–5. Describe what each score means so judges score consistently.</p>
+              <p class="mt-0.5 text-sm text-slate-500">Each question is Yes/No or rated on a scale. Describe what each scale score means so judges score consistently.</p>
             </div>
             <button type="button" onclick="Stage2ManagementPage.closeEditModal()" aria-label="Close" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
               ${Stage2ManagementPage.svg(Stage2ManagementPage.ICONS.close, 'h-5 w-5')}
@@ -115,8 +121,8 @@ class Stage2ManagementPage {
     }
   }
 
-  static filled(descriptions) {
-    return this.SCORES.filter((s) => String((descriptions && descriptions[`score${s}`]) || '').trim()).length;
+  static filled(descriptions, scaleMax) {
+    return this.levels(scaleMax).filter((s) => String((descriptions && descriptions[`score${s}`]) || '').trim()).length;
   }
 
   static renderAwardList() {
@@ -132,17 +138,20 @@ class Stage2ManagementPage {
     list.innerHTML = this.awards
       .map((award, index) => {
         const questions = award.questions || [];
-        const guides = questions.map((_, qi) => this.filled(award.scoringDescriptions && award.scoringDescriptions[qi]));
-        const complete = guides.filter((n) => n === 5).length;
+        const types = this.typesOf(award);
+        const scaleMax = award.scaleMax || 5;
+        const guides = questions.map((_, qi) => this.filled(award.scoringDescriptions && award.scoringDescriptions[qi], scaleMax));
+        const scaleCount = types.filter((t) => t === 'scale').length;
+        const complete = guides.filter((n, qi) => types[qi] === 'scale' && n === scaleMax).length;
         return `
           <div class="card flex flex-col">
             <div class="card-header flex-nowrap">
               <div class="min-w-0">
                 <h3 class="card-title truncate">${UI.escape(award.name)}</h3>
-                <p class="text-xs text-slate-500">${questions.length} question${questions.length === 1 ? '' : 's'} · scored 1–5</p>
+                <p class="text-xs text-slate-500">${UI.escape(UI.questionMixLabel({ types, scaleMax, yesNoWeight: award.yesNoWeight ?? 0.5 }) || 'No questions')}</p>
               </div>
-              <span class="badge shrink-0 ${questions.length && complete === questions.length ? 'badge-green' : 'badge-yellow'}" title="Questions with all five scoring descriptions">
-                ${complete}/${questions.length} guides
+              <span class="badge shrink-0 ${complete === scaleCount ? 'badge-green' : 'badge-yellow'}" title="Scale questions with every scoring description filled in">
+                ${complete}/${scaleCount} guides
               </span>
             </div>
             <ol class="flex-1 space-y-2.5 px-5 py-4">
@@ -154,7 +163,11 @@ class Stage2ManagementPage {
                 <li class="flex items-start gap-3 text-sm">
                   <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-purple-100 text-xs font-semibold text-purple-700">${qi + 1}</span>
                   <span class="min-w-0 flex-1 text-slate-700">${UI.escape(q)}</span>
-                  <span class="shrink-0 text-xs tabular-nums ${guides[qi] === 5 ? 'text-emerald-600' : 'text-amber-600'}" title="Scoring descriptions filled in">${guides[qi]}/5</span>
+                  ${
+                    types[qi] === 'scale'
+                      ? `<span class="shrink-0 text-xs tabular-nums ${guides[qi] === scaleMax ? 'text-emerald-600' : 'text-amber-600'}" title="Scoring descriptions filled in">${guides[qi]}/${scaleMax}</span>`
+                      : '<span class="shrink-0 text-xs text-slate-500">Yes/No</span>'
+                  }
                 </li>`,
                       )
                       .join('')
@@ -176,9 +189,12 @@ class Stage2ManagementPage {
     this.editIndex = index;
     this.draft = {
       questions: [...questions],
+      questionTypes: this.typesOf(award),
+      scaleMax: award.scaleMax || 5,
+      yesNoWeight: award.yesNoWeight ?? 0.5,
       scoringDescriptions: questions.map((_, qi) => {
         const d = (award.scoringDescriptions && award.scoringDescriptions[qi]) || {};
-        return Object.fromEntries(this.SCORES.map((s) => [`score${s}`, d[`score${s}`] || '']));
+        return Object.fromEntries(this.levels(10).map((s) => [`score${s}`, d[`score${s}`] || '']));
       }),
     };
     this.snapshot = JSON.stringify(this.draft);
@@ -189,8 +205,9 @@ class Stage2ManagementPage {
   }
 
   static renderDraft() {
-    const { questions, scoringDescriptions } = this.draft;
+    const { questions, scoringDescriptions, questionTypes, scaleMax } = this.draft;
     document.getElementById('editQuestionsForm').innerHTML =
+      UI.scoringSetup({ types: questionTypes, scaleMax, yesNoWeight: this.draft.yesNoWeight }, 'Stage2ManagementPage.setScoring(null') +
       questions
         .map(
           (q, qi) => `
@@ -199,23 +216,28 @@ class Stage2ManagementPage {
             <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple-100 text-xs font-semibold text-purple-700">${qi + 1}</span>
             <input id="question_${qi}" type="text" value="${UI.escape(q)}" placeholder="Question / criterion"
               oninput="Stage2ManagementPage.updateDraft(${qi}, 'question', this.value)" class="input font-medium">
+            ${UI.questionTypeSelect(questionTypes[qi], `Stage2ManagementPage.setScoring(${qi}`)}
             <button type="button" onclick="Stage2ManagementPage.removeQuestion(${qi})" ${questions.length <= 1 ? 'disabled' : ''}
               title="Delete question" aria-label="Delete question"
               class="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40">
               ${this.svg(this.ICONS.trash, 'h-5 w-5')}
             </button>
           </div>
-          <div class="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 sm:ml-9">
+          ${
+            questionTypes[qi] === 'scale'
+              ? `<div class="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 sm:ml-9">
             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Scoring guide</p>
-            ${this.SCORES.map(
+            ${this.levels(scaleMax).map(
               (s) => `
               <div class="flex items-start gap-2">
                 <span class="mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white text-xs font-bold text-purple-700 ring-1 ring-slate-200">${s}</span>
-                <textarea rows="2" placeholder="${UI.escape(this.PLACEHOLDERS[s - 1])}"
+                <textarea rows="2" placeholder="${UI.escape(this.PLACEHOLDERS[s - 1] || `What a score of ${s} means`)}"
                   oninput="Stage2ManagementPage.updateDraft(${qi}, 'score${s}', this.value)" class="input resize-y text-xs">${UI.escape(scoringDescriptions[qi][`score${s}`])}</textarea>
               </div>`,
             ).join('')}
-          </div>
+          </div>`
+              : '<p class="mt-2 text-xs text-slate-500 sm:ml-9">Judges answer Yes or No.</p>'
+          }
         </div>`,
         )
         .join('') +
@@ -235,7 +257,8 @@ class Stage2ManagementPage {
   static addQuestion() {
     if (!this.draft) return;
     this.draft.questions.push('');
-    this.draft.scoringDescriptions.push(Object.fromEntries(this.SCORES.map((s) => [`score${s}`, ''])));
+    this.draft.questionTypes.push('scale');
+    this.draft.scoringDescriptions.push(Object.fromEntries(this.levels(10).map((s) => [`score${s}`, ''])));
     this.renderDraft();
     const input = document.getElementById(`question_${this.draft.questions.length - 1}`);
     input.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -245,8 +268,17 @@ class Stage2ManagementPage {
   static removeQuestion(qi) {
     if (!this.draft || this.draft.questions.length <= 1) return;
     this.draft.questions.splice(qi, 1);
+    this.draft.questionTypes.splice(qi, 1);
     this.draft.scoringDescriptions.splice(qi, 1);
     this.renderDraft();
+  }
+
+  // A question's type (qi), or the award's scale range / yes-no share (qi = null)
+  static setScoring(qi, field, value) {
+    if (!this.draft) return;
+    if (field === 'type') this.draft.questionTypes[qi] = value;
+    else this.draft[field] = value;
+    if (field !== 'yesNoWeight') this.renderDraft();
   }
 
   static async closeEditModal(force = false) {
@@ -279,7 +311,16 @@ class Stage2ManagementPage {
     }
     const award = this.awards[this.editIndex];
     const criteria = this.awards.map((a, i) =>
-      i === this.editIndex ? { ...a, questions: [...draft.questions], scoringDescriptions: draft.scoringDescriptions.map((d) => ({ ...d })) } : a,
+      i === this.editIndex
+        ? {
+            ...a,
+            questions: [...draft.questions],
+            questionTypes: [...draft.questionTypes],
+            scaleMax: draft.scaleMax,
+            yesNoWeight: draft.yesNoWeight,
+            scoringDescriptions: draft.scoringDescriptions.map((d) => ({ ...d })),
+          }
+        : a,
     );
     const timerInput = Number(document.getElementById('timerMinutes').value);
     const timerMinutes = Number.isInteger(timerInput) && timerInput >= 1 && timerInput <= 180 ? timerInput : this.savedTimer;

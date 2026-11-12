@@ -3,14 +3,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Panel } from '../schemas/panel.schema';
 import { Score } from '../schemas/score.schema';
-import { Team } from '../schemas/team.schema';
+import { ScoresService } from '../scores/scores.service';
 
 @Injectable()
 export class Stage2QualificationService {
   constructor(
     @InjectModel(Panel.name) private panelModel: Model<Panel>,
     @InjectModel(Score.name) private scoreModel: Model<Score>,
-    @InjectModel(Team.name) private teamModel: Model<Team>,
+    private readonly scoresService: ScoresService,
   ) {}
 
   async getQualificationStats() {
@@ -150,41 +150,14 @@ export class Stage2QualificationService {
     };
   }
 
+  // Same ranking as the Stage 1 results (scores rounded, ties broken by more judges, then team name), scored teams only
   async getTopTeamsForQualification(limit: number = 60) {
-    // Get top teams by Stage 1 average score
-    const scores = await this.scoreModel
-      .aggregate([
-        { $match: { stage: 1 } },
-        {
-          $group: {
-            _id: '$team',
-            averageScore: { $avg: '$totalScore' },
-            judgeCount: { $sum: 1 },
-          },
-        },
-        { $sort: { averageScore: -1 } },
-        { $limit: limit },
-      ])
-      .exec();
-
-    // Populate team details
-    const teamIds = scores.map((s) => s._id);
-    const teams = await this.teamModel
-      .find({ _id: { $in: teamIds } }, { name: 1, challenge: 1 })
-      .lean()
-      .exec();
-    const teamsById = new Map(teams.map((team) => [String(team._id), team]));
-
-    return scores.map((score) => {
-      const team = teamsById.get(String(score._id));
-      return {
-        _id: score._id,
-        name: team?.name || 'Unknown',
-        challenge: team?.challenge || 'Unknown',
-        averageScore: score.averageScore,
-        judgeCount: score.judgeCount,
-      };
-    });
+    const ranked = (await this.scoresService.getTopTeams(1, limit)) as Array<{
+      _id: unknown; name: string; challenge: string; averageScore: number; judgeCount: number; hasScore: boolean;
+    }>;
+    return ranked
+      .filter((team) => team.hasScore)
+      .map(({ _id, name, challenge, averageScore, judgeCount }) => ({ _id, name, challenge, averageScore, judgeCount }));
   }
 
   async qualifyTopTeams(limit: number = 60) {

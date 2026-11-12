@@ -16,6 +16,7 @@ class Stage2QualifyPage {
   static stats = null;
   static preview = [];
   static previewLimit = null;
+  static firstOut = null;
   static previewPage = 1;
   static previewSeq = 0;
   static judgesSeq = 0;
@@ -228,6 +229,13 @@ class Stage2QualifyPage {
     if (this.previewLimit && this.preview.length < this.previewLimit && this.previewLimit === this.readLimit()) {
       notes.push(`Only ${this.preview.length} teams have Stage 1 scores, so only ${this.preview.length} will qualify.`);
     }
+    const lastIn = this.preview[this.preview.length - 1];
+    if (this.previewLimit === this.readLimit() && lastIn && this.firstOut && this.firstOut.averageScore === lastIn.averageScore) {
+      notes.push(
+        `Tie at the cut-off: #${this.preview.length} ${UI.escape(lastIn.name)} and #${this.preview.length + 1} ${UI.escape(this.firstOut.name)} both average ${Number(lastIn.averageScore).toFixed(2)}. ` +
+          `Ties are broken by more Stage 1 judges, then team name.`,
+      );
+    }
     el.innerHTML = notes.length
       ? `<div class="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">${notes.map((n) => `<p>${n}</p>`).join('')}</div>`
       : '';
@@ -264,9 +272,11 @@ class Stage2QualifyPage {
     tbody.innerHTML = UI.skeletonRows(5, 8);
     document.getElementById('previewPagination').innerHTML = '';
     try {
-      const teams = await UI.api(`/api/stage2-qualification/top-teams?limit=${limit}`);
+      // One extra team shows whether a tie straddles the cut-off
+      const teams = await UI.api(`/api/stage2-qualification/top-teams?limit=${limit + 1}`);
       if (seq !== this.previewSeq || !document.getElementById('top60Table')) return;
-      this.preview = Array.isArray(teams) ? teams : [];
+      this.preview = Array.isArray(teams) ? teams.slice(0, limit) : [];
+      this.firstOut = Array.isArray(teams) ? teams[limit] || null : null;
       this.previewLimit = limit;
       this.previewPage = 1;
       this.renderPreview();

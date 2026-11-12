@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
+import { QUESTION_TYPES, QuestionType } from '../common/scoring';
 
 export type PanelDocument = Panel & Document;
 
@@ -39,17 +40,23 @@ export class Panel {
   })
   awardType: string;
 
-  // Special panel questions (scored 1–5) with optional score descriptions
+  // Special panel questions (yes/no or a 1–scaleMax scale) with optional score descriptions
   @Prop({
     type: [
       {
         question: String,
+        type: { type: String, enum: QUESTION_TYPES },
         descriptions: {
           score1: String,
           score2: String,
           score3: String,
           score4: String,
           score5: String,
+          score6: String,
+          score7: String,
+          score8: String,
+          score9: String,
+          score10: String,
         },
       },
     ],
@@ -57,14 +64,16 @@ export class Panel {
   })
   awardCriteria: Array<{
     question: string;
-    descriptions: {
-      score1: string;
-      score2: string;
-      score3: string;
-      score4: string;
-      score5: string;
-    };
+    type?: QuestionType;
+    descriptions: Record<string, string>;
   }>;
+
+  // Special panels: top of the scale questions' 1–N range, and the yes/no share when both types are used
+  @Prop({ type: Number, min: 2, max: 10 })
+  scaleMax?: number;
+
+  @Prop({ type: Number, min: 0, max: 1 })
+  yesNoWeight?: number;
 }
 
 export const PanelSchema = SchemaFactory.createForClass(Panel);

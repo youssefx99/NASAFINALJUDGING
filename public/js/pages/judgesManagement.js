@@ -1,6 +1,7 @@
 // Judges Management Page
 class JudgesManagementPage {
   static PER_PAGE = 25;
+  static CONFIRM_PHRASE = 'DELETE ALL JUDGES';
   static judges = [];
   static filtered = [];
   static page = 1;
@@ -16,6 +17,10 @@ class JudgesManagementPage {
         <button onclick="JudgesManagementPage.showCsvUploadModal()" class="btn btn-secondary">
           ${Sidebar.icon('upload', 'h-4 w-4')}
           Upload CSV
+        </button>
+        <button id="deleteAllJudgesBtn" onclick="JudgesManagementPage.showDeleteAllModal()" class="btn btn-danger" disabled>
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+          Delete All Judges
         </button>
         <button onclick="JudgesManagementPage.showCreateModal()" class="btn btn-primary">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
@@ -135,6 +140,39 @@ class JudgesManagementPage {
             </div>
           </form>
         </div>
+
+        <div id="deleteAllJudgesModal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/50 p-4"
+          onclick="if (event.target === this) JudgesManagementPage.hideDeleteAllModal()"
+          onkeydown="if (event.key === 'Escape') JudgesManagementPage.hideDeleteAllModal()">
+          <form class="card w-full max-w-lg" role="dialog" aria-modal="true" aria-labelledby="deleteAllJudgesTitle"
+            onsubmit="event.preventDefault(); JudgesManagementPage.deleteAllJudges()">
+            <div class="flex items-start gap-4 p-6">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <h3 id="deleteAllJudgesTitle" class="text-lg font-semibold text-slate-900">Delete all judges?</h3>
+                <p class="mt-1 text-sm text-slate-600">This permanently deletes <strong id="deleteAllJudgesCount" class="text-slate-900">all</strong> judge accounts together with:</p>
+                <ul class="mt-2 list-disc space-y-0.5 pl-5 text-sm text-slate-600">
+                  <li>Every score they gave (Stage 1, Stage 2 and special panels)</li>
+                  <li>Their seats on all panels</li>
+                </ul>
+                <p class="mt-2 text-sm text-slate-600">Admin accounts, teams and panels are kept.</p>
+                <p class="mt-3 text-sm font-medium text-red-700">This action cannot be undone.</p>
+                <label for="deleteAllJudgesInput" class="label mt-4">
+                  Type <span class="font-mono font-semibold text-red-600">${JudgesManagementPage.CONFIRM_PHRASE}</span> to confirm
+                </label>
+                <input id="deleteAllJudgesInput" type="text" autocomplete="off" spellcheck="false"
+                  placeholder="${JudgesManagementPage.CONFIRM_PHRASE}" class="input font-mono"
+                  oninput="document.getElementById('confirmDeleteAllJudgesBtn').disabled = this.value.trim() !== JudgesManagementPage.CONFIRM_PHRASE" />
+              </div>
+            </div>
+            <div class="flex justify-end gap-3 rounded-b-xl border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <button type="button" onclick="JudgesManagementPage.hideDeleteAllModal()" class="btn btn-secondary">Cancel</button>
+              <button type="submit" id="confirmDeleteAllJudgesBtn" class="btn btn-danger" disabled>Delete all judges</button>
+            </div>
+          </form>
+        </div>
       `,
     });
   }
@@ -220,6 +258,7 @@ class JudgesManagementPage {
     const term = (document.getElementById('searchJudges')?.value || '').trim().toLowerCase();
     const tokens = term ? term.split(/\s+/) : [];
     JudgesManagementPage.filtered = JudgesManagementPage.judges.filter((r) => tokens.every((t) => r.search.includes(t)));
+    document.getElementById('deleteAllJudgesBtn').disabled = !JudgesManagementPage.judges.length;
     if (resetPage) JudgesManagementPage.page = 1;
     JudgesManagementPage.renderTable();
   }
@@ -395,6 +434,44 @@ class JudgesManagementPage {
     } catch (error) {
       console.error('Failed to delete judge:', error);
       UI.toast(`Failed to delete judge: ${error.message}`, 'error');
+    }
+  }
+
+  static showDeleteAllModal() {
+    if (!JudgesManagementPage.judges.length) return;
+    document.getElementById('deleteAllJudgesCount').textContent = JudgesManagementPage.judges.length.toLocaleString();
+    const input = document.getElementById('deleteAllJudgesInput');
+    input.value = '';
+    input.disabled = false;
+    const button = document.getElementById('confirmDeleteAllJudgesBtn');
+    button.disabled = true;
+    button.textContent = 'Delete all judges';
+    document.getElementById('deleteAllJudgesModal').classList.remove('hidden');
+    input.focus();
+  }
+
+  static hideDeleteAllModal() {
+    document.getElementById('deleteAllJudgesModal')?.classList.add('hidden');
+  }
+
+  static async deleteAllJudges() {
+    const input = document.getElementById('deleteAllJudgesInput');
+    const button = document.getElementById('confirmDeleteAllJudgesBtn');
+    if (input.value.trim() !== JudgesManagementPage.CONFIRM_PHRASE) return;
+    input.disabled = true;
+    button.disabled = true;
+    button.textContent = 'Deleting...';
+    try {
+      const result = await UI.api('/api/users/judges', { method: 'DELETE' });
+      JudgesManagementPage.hideDeleteAllModal();
+      JudgesManagementPage.panels = null;
+      UI.toast(`Deleted ${result?.deletedCount ?? 0} judges with their scores and panel seats`, 'success');
+      JudgesManagementPage.loadJudges();
+    } catch (error) {
+      UI.toast(`Failed to delete all judges: ${error.message}`, 'error');
+      input.disabled = false;
+      button.disabled = false;
+      button.textContent = 'Delete all judges';
     }
   }
 

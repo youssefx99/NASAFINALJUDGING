@@ -30,7 +30,7 @@ class PanelManagementPage {
   static judges = [];
   static teams = [];
   static criteria = [];
-  static panelNumbers = [];
+  static teamGroups = { panelNumber: [], actualSolution: [] };
   static loaded = false;
   static stage = 1;
   static query = '';
@@ -160,9 +160,11 @@ class PanelManagementPage {
             <button type="button" onclick="PanelManagementPage.clearSelection('${kind}')" class="font-medium text-slate-500 hover:text-red-600">Clear</button>
             ${
               kind === 'teams'
-                ? `<span id="panelNumberWrap" class="sm:ml-auto">
-                    <select id="panelNumberSelect" onchange="PanelManagementPage.addByPanelNumber(this.value)" aria-label="Add teams by panel number"
+                ? `<span id="panelNumberWrap" class="flex flex-wrap gap-2 sm:ml-auto">
+                    <select id="panelNumberSelect" onchange="PanelManagementPage.addByGroup('panelNumber', this.value)" aria-label="Add teams by panel number"
                       class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"></select>
+                    <select id="actualSolutionSelect" onchange="PanelManagementPage.addByGroup('actualSolution', this.value)" aria-label="Add teams by actual solution"
+                      class="max-w-[14rem] rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"></select>
                   </span>`
                 : ''
             }
@@ -245,6 +247,11 @@ class PanelManagementPage {
     }
   }
 
+  // Teams that belong together (same panel number or actual solution) match ignoring case and extra spaces
+  static groupKey(value) {
+    return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
   static setTeams(teams) {
     this.teams = (teams || [])
       .map((t) => ({
@@ -252,14 +259,21 @@ class PanelManagementPage {
         name: t.name || '',
         challenge: t.challenge || '',
         panelNumber: t.panelNumber,
-        _search: `${t.name || ''} ${t.challenge || ''} ${t.panelNumber || ''}`.toLowerCase(),
+        actualSolution: t.actualSolution,
+        _search: `${t.name || ''} ${t.challenge || ''} ${t.panelNumber || ''} ${t.actualSolution || ''}`.toLowerCase(),
       }))
       .sort((a, b) => this.collator.compare(a.name, b.name));
-    const counts = new Map();
-    this.teams.forEach((t) => {
-      if (t.panelNumber && String(t.panelNumber).trim()) counts.set(t.panelNumber, (counts.get(t.panelNumber) || 0) + 1);
-    });
-    this.panelNumbers = [...counts].sort((a, b) => this.collator.compare(String(a[0]), String(b[0])));
+    // [key, label, team count] for each distinct panel number / actual solution
+    for (const field of ['panelNumber', 'actualSolution']) {
+      const groups = new Map();
+      this.teams.forEach((t) => {
+        const key = this.groupKey(t[field]);
+        if (!key) return;
+        const group = groups.get(key) || groups.set(key, { label: String(t[field]).trim().replace(/\s+/g, ' '), count: 0 }).get(key);
+        group.count++;
+      });
+      this.teamGroups[field] = [...groups].map(([key, g]) => [key, g.label, g.count]).sort((a, b) => this.collator.compare(a[1], b[1]));
+    }
   }
 
   static setPanelsAndJudges(panels, judges) {
@@ -540,7 +554,10 @@ class PanelManagementPage {
     this.renderAwardOptions(panel && panel.awardType);
     document.getElementById('panelNumberSelect').innerHTML =
       '<option value="">Add by panel number…</option>' +
-      this.panelNumbers.map(([pn, count]) => `<option value="${UI.escape(pn)}">Panel number ${UI.escape(pn)} (${count})</option>`).join('');
+      this.teamGroups.panelNumber.map(([key, label, count]) => `<option value="${UI.escape(key)}">Panel number ${UI.escape(label)} (${count})</option>`).join('');
+    document.getElementById('actualSolutionSelect').innerHTML =
+      '<option value="">Add by actual solution…</option>' +
+      this.teamGroups.actualSolution.map(([key, label, count]) => `<option value="${UI.escape(key)}">${UI.escape(label)} (${count})</option>`).join('');
     const saveBtn = document.getElementById('panelSaveBtn');
     saveBtn.disabled = false;
     saveBtn.textContent = panel ? 'Save changes' : 'Create panel';
@@ -629,6 +646,7 @@ class PanelManagementPage {
           <span class="block truncate text-xs text-slate-500">${UI.escape(isTeam ? item.challenge : kind === 'criteria' ? item.detail : item.email)}</span>
         </span>
         ${note ? `<span class="shrink-0 text-xs ${isTeam ? 'text-amber-600' : 'text-slate-400'}" title="${UI.escape(others.join(', '))}">${UI.escape(note)}</span>` : ''}
+        ${isTeam && item.actualSolution ? `<span class="badge badge-purple hidden max-w-[10rem] shrink-0 truncate sm:inline-flex" title="Actual solution">${UI.escape(item.actualSolution)}</span>` : ''}
         ${isTeam && item.panelNumber ? `<span class="badge badge-gray shrink-0">#${UI.escape(item.panelNumber)}</span>` : ''}
       </label>`;
   }
@@ -690,15 +708,18 @@ class PanelManagementPage {
     this.renderPicker(kind);
   }
 
-  static addByPanelNumber(value) {
+  // Adds every team with the chosen panel number / actual solution to the selection
+  static addByGroup(field, key) {
     const ed = this.editor;
-    document.getElementById('panelNumberSelect').value = '';
-    if (!ed || !value) return;
-    const matching = this.teams.filter((t) => t.panelNumber === value);
+    const select = document.getElementById(`${field}Select`);
+    const group = this.teamGroups[field].find(([k]) => k === key);
+    select.value = '';
+    if (!ed || !group) return;
+    const matching = this.teams.filter((t) => this.groupKey(t[field]) === key);
     matching.forEach((t) => ed.selected.teams.add(t._id));
     ed.dirty = true;
     this.renderPicker('teams');
-    UI.toast(`Selected ${this.plural(matching.length, 'team')} with panel number ${value}`, 'success');
+    UI.toast(`Selected ${this.plural(matching.length, 'team')} with ${field === 'panelNumber' ? 'panel number' : 'actual solution'} ${group[1]}`, 'success');
   }
 
   static markDirty() {

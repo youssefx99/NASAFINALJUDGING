@@ -72,6 +72,7 @@ class ExportDataPage {
   static buildWorkbook(data) {
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
     const percent = (weight) => Math.round(weight * 1000) / 10;
+    const answerCell = (value, type) => (type === 'scale' ? value : value === 1 ? 'Yes' : 'No');
     const when = (value) =>
       value ? new Date(value).toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
     const yesNo = (value) => (value ? 'Yes' : 'No');
@@ -88,7 +89,8 @@ class ExportDataPage {
     const byTeamThenJudge = (a, b) => collator.compare(team(a.team).name, team(b.team).name) || collator.compare(judge(a.judge).name, judge(b.judge).name);
     const names = (ids, lookup) => ids.map((id) => lookup(id).name).sort(collator.compare).join(', ');
     const panelNames = (panels) => panels.map((p) => p.name).join(', ');
-    const average = (values) => values.reduce((sum, v) => sum + v, 0) / values.length;
+    // Rounded like the server so equal averages tie exactly
+    const average = (values) => Math.round((values.reduce((sum, v) => sum + v, 0) / values.length) * 1e9) / 1e9;
     const awards = [...new Set([...stage2.criteria.map((c) => c.name), ...data.winners.map((w) => w.awardType)])];
 
     // Panel memberships: team/judge id -> panels
@@ -210,11 +212,11 @@ class ExportDataPage {
     ];
 
     // Stage 1 columns: every Stage 1 criterion (plus any renamed/removed ones still in scores) with its questions
-    const s1Columns = stage1.criteria.map((c) => ({ name: c.name, questions: c.questions.length }));
+    const s1Columns = stage1.criteria.map((c) => ({ name: c.name, questions: c.questions.length, types: c.questionTypes || [] }));
     s1Scores.forEach((s) =>
       Object.entries(s.scores || {}).forEach(([name, answers]) => {
         let column = s1Columns.find((c) => c.name === name);
-        if (!column) s1Columns.push((column = { name, questions: 0 }));
+        if (!column) s1Columns.push((column = { name, questions: 0, types: [] }));
         column.questions = Math.max(column.questions, answers.length);
       }),
     );
@@ -225,7 +227,7 @@ class ExportDataPage {
         'Judge',
         'Judge Email',
         'Score /5',
-        ...s1Columns.flatMap((c) => [`${c.name} (Yes count)`, ...Array.from({ length: c.questions }, (_, qi) => `${c.name} Q${qi + 1}`)]),
+        ...s1Columns.flatMap((c) => [`${c.name} (points)`, ...Array.from({ length: c.questions }, (_, qi) => `${c.name} Q${qi + 1}`)]),
         'Submitted At',
       ],
       ...s1Scores.map((s) => [
@@ -237,28 +239,44 @@ class ExportDataPage {
         ...s1Columns.flatMap((c) => {
           const answers = (s.scores || {})[c.name];
           return answers
-            ? [answers.filter((v) => v === 1).length, ...Array.from({ length: c.questions }, (_, qi) => (qi < answers.length ? (answers[qi] === 1 ? 'Yes' : 'No') : ''))]
+            ? [
+                (s.criteriaScores || {})[c.name] ?? answers.filter((v) => v === 1).length,
+                ...Array.from({ length: c.questions }, (_, qi) => (qi < answers.length ? answerCell(answers[qi], c.types[qi] || 'yesno') : '')),
+              ]
             : Array(c.questions + 1).fill('');
         }),
         when(s.updatedAt),
       ]),
     ];
 
-    const ratingRows = (rows, key) => {
+    // Answers as judges saw them: Yes/No, or the scale rating
+    const ratingRows = (rows, key, typeOf) => {
       const count = Math.max(0, ...rows.map((s) => ((s.scores || {})[key(s)] || []).length));
       return {
         questions: Array.from({ length: count }, (_, qi) => `Q${qi + 1}`),
-        answers: (s) => Array.from({ length: count }, (_, qi) => ((s.scores || {})[key(s)] || [])[qi] ?? ''),
+        answers: (s) =>
+          Array.from({ length: count }, (_, qi) => {
+            const value = ((s.scores || {})[key(s)] || [])[qi];
+            return value === undefined ? '' : answerCell(value, typeOf(s, qi));
+          }),
       };
     };
-    const s2Ratings = ratingRows(s2Scores, (s) => s.awardType);
+    const s2Ratings = ratingRows(
+      s2Scores,
+      (s) => s.awardType,
+      (s, qi) => stage2.criteria.find((c) => c.name === s.awardType)?.questionTypes?.[qi] || 'scale',
+    );
     sheets['Stage 2 Scores'] = [
-      ['Award', 'Team', 'Challenge', 'Judge', 'Judge Email', ...s2Ratings.questions, 'Average /5', 'Submitted At'],
+      ['Award', 'Team', 'Challenge', 'Judge', 'Judge Email', ...s2Ratings.questions, 'Score /5', 'Submitted At'],
       ...s2Scores.map((s) => [s.awardType, team(s.team).name, team(s.team).challenge, judge(s.judge).name, judge(s.judge).email, ...s2Ratings.answers(s), s.totalScore, when(s.updatedAt)]),
     ];
-    const s3Ratings = ratingRows(s3Scores, (s) => s.panel);
+    const s3Ratings = ratingRows(
+      s3Scores,
+      (s) => s.panel,
+      (s, qi) => panelById.get(s.panel)?.awardCriteria?.[qi]?.type || 'scale',
+    );
     sheets['Special Panel Scores'] = [
-      ['Special Panel', 'Team', 'Challenge', 'Judge', 'Judge Email', ...s3Ratings.questions, 'Average /5', 'Submitted At'],
+      ['Special Panel', 'Team', 'Challenge', 'Judge', 'Judge Email', ...s3Ratings.questions, 'Score /5', 'Submitted At'],
       ...s3Scores.map((s) => [
         panelById.get(s.panel)?.name || '(deleted panel)',
         team(s.team).name,
@@ -335,12 +353,34 @@ class ExportDataPage {
       ]),
     ];
 
-    const descriptions = (d = {}) => [1, 2, 3, 4, 5].map((n) => d[`score${n}`] || '');
+    const levels = Array.from({ length: 10 }, (_, i) => i + 1);
+    const descriptions = (d = {}, type) => levels.map((n) => (type === 'scale' && d[`score${n}`]) || '');
+    // One row per question: its type and, for a criterion mixing both types, the yes/no share
+    const questionRow = (stage, name, weight, setup, type, qi, question, d) => [
+      stage,
+      name,
+      weight,
+      type === 'scale' ? `Scale 1–${setup.scaleMax || 5}` : 'Yes/No',
+      setup.types.includes('scale') && setup.types.includes('yesno') ? percent(setup.yesNoWeight ?? 0.5) : '',
+      qi + 1,
+      question,
+      ...descriptions(d, type),
+    ];
+    const typesOf = (c, fallback) => c.questions.map((_, qi) => (c.questionTypes || [])[qi] || fallback);
     sheets['Criteria'] = [
-      ['Stage', 'Criterion / Award / Panel', 'Weight (%)', 'Question #', 'Question', 'Score 1', 'Score 2', 'Score 3', 'Score 4', 'Score 5'],
-      ...stage1.criteria.flatMap((c) => c.questions.map((q, qi) => ['Stage 1 (Yes/No)', c.name, percent(c.weight), qi + 1, q, '', '', '', '', ''])),
-      ...stage2.criteria.flatMap((c) => c.questions.map((q, qi) => ['Stage 2 (1–5)', c.name, '', qi + 1, q, ...descriptions((c.scoringDescriptions || [])[qi])])),
-      ...panelsOf(3).flatMap((p) => (p.awardCriteria || []).map((q, qi) => ['Special panel (1–5)', p.name, '', qi + 1, q.question, ...descriptions(q.descriptions)])),
+      ['Stage', 'Criterion / Award / Panel', 'Weight (%)', 'Question Type', 'Yes/No Share (%)', 'Question #', 'Question', ...levels.map((n) => `Score ${n}`)],
+      ...stage1.criteria.flatMap((c) => {
+        const setup = { ...c, types: typesOf(c, 'yesno') };
+        return c.questions.map((q, qi) => questionRow('Stage 1', c.name, percent(c.weight), setup, setup.types[qi], qi, q, {}));
+      }),
+      ...stage2.criteria.flatMap((c) => {
+        const setup = { ...c, types: typesOf(c, 'scale') };
+        return c.questions.map((q, qi) => questionRow('Stage 2', c.name, '', setup, setup.types[qi], qi, q, (c.scoringDescriptions || [])[qi]));
+      }),
+      ...panelsOf(3).flatMap((p) => {
+        const setup = { ...p, types: (p.awardCriteria || []).map((q) => q.type || 'scale') };
+        return (p.awardCriteria || []).map((q, qi) => questionRow('Special panel', p.name, '', setup, setup.types[qi], qi, q.question, q.descriptions));
+      }),
     ];
 
     const workbook = XLSX.utils.book_new();

@@ -73,6 +73,86 @@ const UI = {
       .join('');
   },
 
+  // Same as the server (src/common/scoring.ts): a criterion from 0 to 1. A "yes" counts 1 and a scale answer v counts v / scaleMax;
+  // when a criterion mixes both types, its yes/no questions carry yesNoWeight of it. Unanswered questions count 0.
+  criterionFraction(answers, types, scaleMax = 5, yesNoWeight = 0.5) {
+    let yes = 0;
+    let yesNoCount = 0;
+    let scaleSum = 0;
+    let scaleCount = 0;
+    answers.forEach((value, i) => {
+      if (types[i] === 'scale') {
+        scaleSum += value || 0;
+        scaleCount++;
+      } else {
+        yes += value || 0;
+        yesNoCount++;
+      }
+    });
+    if (!scaleCount) return yesNoCount ? yes / yesNoCount : 0;
+    if (!yesNoCount) return scaleSum / (scaleCount * scaleMax);
+    return yesNoWeight * (yes / yesNoCount) + (1 - yesNoWeight) * (scaleSum / (scaleCount * scaleMax));
+  },
+
+  // e.g. "2 Yes/No · 3 Scale 1–5 · Yes/No 40% / Scale 60%"
+  questionMixLabel({ types, scaleMax = 5, yesNoWeight = 0.5 }) {
+    const yesNo = types.filter((t) => t !== 'scale').length;
+    const scale = types.length - yesNo;
+    const pct = Math.round(yesNoWeight * 1000) / 10;
+    return [
+      yesNo ? `${yesNo} Yes/No` : '',
+      scale ? `${scale} Scale 1–${scaleMax}` : '',
+      yesNo && scale ? `Yes/No ${pct}% / Scale ${Math.round((100 - pct) * 10) / 10}%` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  },
+
+  // Criteria editors (Stage 1, Stage 2, special panels): `call` is the page handler start, e.g. "Page.setScoring(2, 0",
+  // completed here with ", field, value)"
+  questionTypeSelect(type, call) {
+    return `<select onchange="${call}, 'type', this.value)" aria-label="Question type"
+      class="w-28 shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none">
+      <option value="yesno" ${type !== 'scale' ? 'selected' : ''}>Yes / No</option>
+      <option value="scale" ${type === 'scale' ? 'selected' : ''}>Scale</option>
+    </select>`;
+  },
+
+  // Scale range and the yes/no vs scale split of one criterion (shown only when it has scale questions)
+  scoringSetup({ types, scaleMax = 5, yesNoWeight = 0.5 }, call) {
+    if (!types.includes('scale')) return '';
+    const pct = Math.round(yesNoWeight * 1000) / 10;
+    const input = 'w-20 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-blue-500 focus:outline-none';
+    return `
+      <div data-mix class="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+        <label class="flex items-center gap-2">Scale questions are rated 1 to
+          <select data-scale-max onchange="${call}, 'scaleMax', Number(this.value))" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none">
+            ${[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `<option value="${n}" ${n === scaleMax ? 'selected' : ''}>${n}</option>`).join('')}
+          </select>
+        </label>
+        ${
+          types.some((t) => t !== 'scale')
+            ? `<div class="flex flex-wrap items-center gap-2">
+                <span>Yes/No questions</span>
+                <input data-mix-yesno type="number" min="0" max="100" step="any" value="${pct}" oninput="${call}, 'yesNoWeight', UI.mixInput(this))" class="${input}"><span>%</span>
+                <span class="ml-2">Scale questions</span>
+                <input data-mix-scale type="number" min="0" max="100" step="any" value="${Math.round((100 - pct) * 10) / 10}" oninput="${call}, 'yesNoWeight', UI.mixInput(this))" class="${input}"><span>%</span>
+              </div>`
+            : ''
+        }
+      </div>`;
+  },
+
+  // Keeps the two shares adding up to 100% and returns the yes/no share as a fraction in 0.1% steps
+  mixInput(input) {
+    const box = input.closest('[data-mix]');
+    const isYesNo = input.hasAttribute('data-mix-yesno');
+    const value = Math.min(100, Math.max(0, Number(input.value) || 0));
+    const yesNo = Math.round((isYesNo ? value : 100 - value) * 10) / 10;
+    box.querySelector(isYesNo ? '[data-mix-scale]' : '[data-mix-yesno]').value = isYesNo ? Math.round((100 - yesNo) * 10) / 10 : yesNo;
+    return Math.round(yesNo * 10) / 1000;
+  },
+
   escape(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')

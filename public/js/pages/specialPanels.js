@@ -1,4 +1,4 @@
-// Special Panels: custom panels outside Stage 1/2. Only the assigned judges see them; each has its own 1–5 questions.
+// Special Panels: custom panels outside Stage 1/2. Only the assigned judges see them; each has its own Yes/No and scale questions.
 class SpecialPanelsPage {
   static panels = [];
   static judges = [];
@@ -79,6 +79,7 @@ class SpecialPanelsPage {
             </div>
             <div class="mt-3 flex flex-wrap gap-2 text-xs">
               <span class="badge badge-gray">${(panel.awardCriteria || []).length} question${(panel.awardCriteria || []).length === 1 ? '' : 's'}</span>
+              ${(panel.awardCriteria || []).length ? `<span class="badge badge-gray">${UI.escape(UI.questionMixLabel({ types: panel.awardCriteria.map((q) => q.type || 'scale'), scaleMax: panel.scaleMax || 5, yesNoWeight: panel.yesNoWeight ?? 0.5 }))}</span>` : ''}
               <span class="badge badge-gray">${panel.judges.length} judge${panel.judges.length === 1 ? '' : 's'}</span>
               <span class="badge badge-gray">${panel.teams.length} team${panel.teams.length === 1 ? '' : 's'}</span>
             </div>
@@ -112,7 +113,9 @@ class SpecialPanelsPage {
     const panel = panelId ? P.panels.find((p) => p._id === panelId) : null;
     P.editor = {
       id: panel?._id || null,
-      questions: panel ? (panel.awardCriteria || []).map((q) => ({ question: q.question, descriptions: q.descriptions })) : [{ question: '' }],
+      questions: panel ? (panel.awardCriteria || []).map((q) => ({ question: q.question, type: q.type || 'scale', descriptions: q.descriptions })) : [{ question: '', type: 'scale' }],
+      scaleMax: panel?.scaleMax || 5,
+      yesNoWeight: panel?.yesNoWeight ?? 0.5,
       judges: new Set(panel ? panel.judges.map((j) => j._id) : []),
       teams: new Set(panel ? panel.teams.map((t) => t._id) : []),
       search: { judges: '', teams: '' },
@@ -144,7 +147,7 @@ class SpecialPanelsPage {
           </div>
           <div>
             <div class="mb-2 flex items-center justify-between">
-              <span class="label mb-0">Questions <span class="font-normal text-slate-500">· judges rate each 1–5</span></span>
+              <span class="label mb-0">Questions <span class="font-normal text-slate-500">· Yes/No or rated on a scale</span></span>
               <button type="button" onclick="SpecialPanelsPage.addQuestion()" class="btn btn-secondary btn-sm">${P.svg('plus')} Add question</button>
             </div>
             <div id="spQuestions" class="space-y-2"></div>
@@ -167,21 +170,32 @@ class SpecialPanelsPage {
 
   static renderQuestions() {
     const ed = SpecialPanelsPage.editor;
-    document.getElementById('spQuestions').innerHTML = ed.questions
+    document.getElementById('spQuestions').innerHTML =
+      UI.scoringSetup({ types: ed.questions.map((q) => q.type), scaleMax: ed.scaleMax, yesNoWeight: ed.yesNoWeight }, 'SpecialPanelsPage.setScoring(null') +
+      ed.questions
       .map(
         (q, i) => `
         <div class="flex items-center gap-2">
           <span class="w-6 shrink-0 text-right text-sm text-slate-400">${i + 1}.</span>
-          <input class="input" maxlength="300" placeholder="Question judges will rate from 1 to 5" value="${UI.escape(q.question)}"
+          <input class="input" maxlength="300" placeholder="Question for the judges" value="${UI.escape(q.question)}"
             oninput="SpecialPanelsPage.editor.questions[${i}].question = this.value">
+          ${UI.questionTypeSelect(q.type, `SpecialPanelsPage.setScoring(${i}`)}
           <button type="button" onclick="SpecialPanelsPage.removeQuestion(${i})" class="btn btn-ghost btn-sm px-2 text-slate-400 hover:text-red-600" title="Remove question" ${ed.questions.length === 1 ? 'disabled' : ''}>${SpecialPanelsPage.svg('trash')}</button>
         </div>`,
       )
       .join('');
   }
 
+  // A question's type (index), or the panel's scale range / yes-no share (index = null)
+  static setScoring(index, field, value) {
+    const ed = SpecialPanelsPage.editor;
+    if (field === 'type') ed.questions[index].type = value;
+    else ed[field] = value;
+    if (field !== 'yesNoWeight') SpecialPanelsPage.renderQuestions();
+  }
+
   static addQuestion() {
-    SpecialPanelsPage.editor.questions.push({ question: '' });
+    SpecialPanelsPage.editor.questions.push({ question: '', type: 'scale' });
     SpecialPanelsPage.renderQuestions();
     const inputs = document.querySelectorAll('#spQuestions input');
     inputs[inputs.length - 1]?.focus();
@@ -260,7 +274,7 @@ class SpecialPanelsPage {
     const button = document.getElementById('spSaveBtn');
     button.disabled = true;
     button.textContent = 'Saving…';
-    const body = { name, stage: 3, judges: [...ed.judges], teams: [...ed.teams], awardCriteria: questions };
+    const body = { name, stage: 3, judges: [...ed.judges], teams: [...ed.teams], awardCriteria: questions, scaleMax: ed.scaleMax, yesNoWeight: ed.yesNoWeight };
     try {
       await UI.api(ed.id ? `/api/panels/${ed.id}` : '/api/panels', { method: ed.id ? 'PUT' : 'POST', body });
       UI.toast(ed.id ? 'Special panel updated' : 'Special panel created', 'success');
@@ -301,7 +315,7 @@ class SpecialPanelsPage {
         <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
             <h3 class="text-lg font-semibold text-slate-900">${UI.escape(results.name)} · Results</h3>
-            <p class="text-sm text-slate-500">Average of the judges' 1–5 ratings · ${results.judgeCount} judge${results.judgeCount === 1 ? '' : 's'} · ${results.questionCount} question${results.questionCount === 1 ? '' : 's'}</p>
+            <p class="text-sm text-slate-500">Average judge score out of 5 · ${results.judgeCount} judge${results.judgeCount === 1 ? '' : 's'} · ${results.questionCount} question${results.questionCount === 1 ? '' : 's'}</p>
           </div>
           <button type="button" onclick="SpecialPanelsPage.closeModal()" class="btn btn-ghost btn-sm" aria-label="Close">${P.svg('close')}</button>
         </div>

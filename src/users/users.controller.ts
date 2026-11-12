@@ -54,6 +54,11 @@ export class UsersController {
     }
   }
 
+  @Delete('judges')
+  async deleteAllJudges() {
+    return await this.usersService.deleteAllJudges();
+  }
+
   @Delete(':id')
   async deleteUser(@Param('id') id: string) {
     try {

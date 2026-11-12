@@ -107,6 +107,18 @@ export class UsersService {
     await this.panelModel.bulkWrite(operations, { ordered: true });
   }
 
+  // Every judge (never admins), their panel seats and all their scores
+  async deleteAllJudges(): Promise<{ deletedCount: number }> {
+    const judgeIds = (await this.userModel.find({ role: 'judge' }, { _id: 1 }).lean().exec()).map((judge) => judge._id);
+    const [result] = await Promise.all([
+      this.userModel.deleteMany({ _id: { $in: judgeIds }, role: 'judge' }),
+      this.panelModel.updateMany({ judges: { $in: judgeIds } }, { $pull: { judges: { $in: judgeIds } } }),
+      this.panelModel.db.collection('scores').deleteMany({ judge: { $in: judgeIds } }),
+    ]);
+    judgeIds.forEach((id) => forgetCachedUser(String(id)));
+    return { deletedCount: result.deletedCount || 0 };
+  }
+
   async deleteUser(id: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) {
       throw new Error('User not found');
