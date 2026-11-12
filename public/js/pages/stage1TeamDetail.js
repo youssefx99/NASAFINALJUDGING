@@ -353,7 +353,7 @@ class Stage1TeamDetailPage {
     const next = this.nextTeam();
 
     root.querySelectorAll('[data-score]').forEach((el) => {
-      el.textContent = score.toFixed(2);
+      el.textContent = UI.score(score);
     });
     root.querySelectorAll('[data-answered]').forEach((el) => {
       el.textContent = `${answered} / ${count}`;

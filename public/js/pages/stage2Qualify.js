@@ -232,7 +232,7 @@ class Stage2QualifyPage {
     const lastIn = this.preview[this.preview.length - 1];
     if (this.previewLimit === this.readLimit() && lastIn && this.firstOut && this.firstOut.averageScore === lastIn.averageScore) {
       notes.push(
-        `Tie at the cut-off: #${this.preview.length} ${UI.escape(lastIn.name)} and #${this.preview.length + 1} ${UI.escape(this.firstOut.name)} both average ${Number(lastIn.averageScore).toFixed(2)}. ` +
+        `Tie at the cut-off: #${this.preview.length} ${UI.escape(lastIn.name)} and #${this.preview.length + 1} ${UI.escape(this.firstOut.name)} both average ${UI.score(lastIn.averageScore)}. ` +
           `Ties are broken by more Stage 1 judges, then team name.`,
       );
     }
@@ -315,7 +315,7 @@ class Stage2QualifyPage {
             <td><span class="inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-full px-2 text-xs font-semibold tabular-nums ${rankTone}">${rank}</span></td>
             <td><a href="/admin/teams/${id}" onclick="navigateToPage(event, '/admin/teams/${id}')" class="font-medium text-slate-900 hover:text-blue-600">${UI.escape(team.name)}</a></td>
             <td><span class="text-slate-500">${UI.escape(team.challenge)}</span></td>
-            <td><p class="text-right font-semibold tabular-nums text-blue-600">${(Number(team.averageScore) || 0).toFixed(2)}</p></td>
+            <td><p class="text-right font-semibold tabular-nums text-blue-600">${UI.score(Number(team.averageScore) || 0)}</p></td>
             <td><p class="text-right tabular-nums">${Number(team.judgeCount) || 0}</p></td>
           </tr>`;
       })

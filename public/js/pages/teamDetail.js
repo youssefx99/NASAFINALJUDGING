@@ -122,7 +122,7 @@ class TeamDetailPage {
         <div class="space-y-6">
           <div class="rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 p-6 text-white shadow-sm">
             <p class="text-sm font-medium text-white/80">Total combined score</p>
-            <p class="mt-1 text-4xl font-semibold">${scoresLoaded ? totalScore.toFixed(2) : '—'}</p>
+            <p class="mt-1 text-4xl font-semibold">${scoresLoaded ? UI.score(totalScore) : '—'}</p>
             <p class="mt-2 text-xs text-white/70">${weights ? `${percent(weights.stage1)}% Stage 1 + ${percent(weights.stage2)}% Stage 2` : 'Weighted Stage 1 + Stage 2'}</p>
           </div>
 
@@ -136,7 +136,7 @@ class TeamDetailPage {
             <div class="card-body space-y-4">
               <div>
                 <p class="text-sm text-slate-500">Average score</p>
-                <p class="text-3xl font-semibold text-blue-600">${stage1Scores ? stage1Score.toFixed(2) : '—'}</p>
+                <p class="text-3xl font-semibold text-blue-600">${stage1Scores ? UI.score(stage1Score) : '—'}</p>
                 ${stage1Scores
                   ? `<p class="mt-1 text-xs text-slate-500">${stage1Scores.length}${stage1Panel ? ` of ${(stage1Panel.judges || []).length}` : ''} judges scored</p>`
                   : ''}
@@ -167,7 +167,7 @@ class TeamDetailPage {
                 : ''}
               <div>
                 <p class="text-sm text-slate-500">Best award average</p>
-                <p class="text-3xl font-semibold text-purple-600">${stage2Scores ? stage2Score.toFixed(2) : '—'}</p>
+                <p class="text-3xl font-semibold text-purple-600">${stage2Scores ? UI.score(stage2Score) : '—'}</p>
                 <p class="mt-1 text-xs text-slate-500">Highest average across award panels</p>
               </div>
               <div class="border-t border-slate-100 pt-4">
@@ -181,7 +181,7 @@ class TeamDetailPage {
                           <div>
                             <div class="mb-1.5 flex items-center justify-between gap-2 text-xs">
                               <span class="font-semibold text-slate-700">${UI.escape(award)}</span>
-                              <span class="text-slate-500">Avg ${avg.toFixed(2)}</span>
+                              <span class="text-slate-500">Avg ${UI.score(avg)}</span>
                             </div>
                             <div class="space-y-1.5 border-l-2 border-purple-100 pl-3">
                               ${scores.map((s) => TeamDetailPage.judgeScoreRow(s, 'text-purple-600')).join('')}
@@ -207,7 +207,7 @@ class TeamDetailPage {
         ${href
           ? `<a href="${href}" onclick="navigateToPage(event, '${href}')" class="truncate text-slate-600 hover:text-blue-600">${name}</a>`
           : `<span class="truncate text-slate-600">${name}</span>`}
-        <span class="font-semibold ${scoreClass}">${Number(score.totalScore || 0).toFixed(2)}</span>
+        <span class="font-semibold ${scoreClass}">${UI.score(score.totalScore || 0)}</span>
       </div>
     `;
   }

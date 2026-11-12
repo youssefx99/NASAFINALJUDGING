@@ -382,7 +382,7 @@ class Stage2TeamDetailPage {
 
     const picked = s.answers.filter((v) => v !== null);
     const count = s.answers.length;
-    const average = picked.length ? this.computeScore(true).toFixed(2) : '—';
+    const average = picked.length ? UI.score(this.computeScore(true)) : '—';
     const scored = s.scoredIds.has(s.team._id);
     const next = this.nextTeam();
 

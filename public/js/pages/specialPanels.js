@@ -331,7 +331,7 @@ class SpecialPanelsPage {
                 <tr>
                   <td>${team.hasScore ? (rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `#${rank}`) : '–'}</td>
                   <td><p class="font-medium text-slate-900">${UI.escape(team.name)}</p><p class="text-xs text-slate-500">${UI.escape(team.challenge)}</p></td>
-                  <td>${team.hasScore ? `<span class="font-semibold text-teal-700">${Number(team.averageScore).toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+                  <td>${team.hasScore ? `<span class="font-semibold text-teal-700">${UI.score(team.averageScore)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
                   <td class="text-slate-600">${Number(team.judgeCount)} / ${Number(results.judgeCount)}</td>
                 </tr>`;
                 })

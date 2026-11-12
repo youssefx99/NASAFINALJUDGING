@@ -73,6 +73,12 @@ const UI = {
       .join('');
   },
 
+  // Score shown with 2 decimals, rounding half up on the decimal value (toFixed rounds the binary value:
+  // 0.785 would show 0.78 but 0.79 once saved). 2e-7 of a hundredth absorbs the 1e-12 storage rounding.
+  score(value) {
+    return (Math.floor(Number(value) * 100 + 0.5 + 2e-7) / 100).toFixed(2);
+  },
+
   // Same as the server (src/common/scoring.ts): a criterion from 0 to 1. A "yes" counts 1 and a scale answer v counts v / scaleMax;
   // when a criterion mixes both types, its yes/no questions carry yesNoWeight of it. Unanswered questions count 0.
   criterionFraction(answers, types, scaleMax = 5, yesNoWeight = 0.5) {

@@ -1,8 +1,9 @@
 export type QuestionType = 'yesno' | 'scale';
 export const QUESTION_TYPES: QuestionType[] = ['yesno', 'scale'];
 
-// Removes floating-point noise (e.g. 3.9999999999999996) so equal scores compare as equal
-export const roundScore = (value: number) => Math.round(value * 1e9) / 1e9;
+// Removes floating-point noise (e.g. 3.9999999999999996) so equal scores compare as equal; 1e-12 keeps averages
+// of many rounded scores within 1e-12 of the exact value
+export const roundScore = (value: number) => Math.round(value * 1e12) / 1e12;
 
 // One criterion's result from 0 to 1: a "yes" counts 1, a scale answer v counts v / scaleMax.
 // When the criterion mixes both types, yes/no questions carry yesNoWeight of it and scale questions the rest.

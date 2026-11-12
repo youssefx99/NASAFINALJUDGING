@@ -248,7 +248,7 @@ class JudgeDetailPage {
         <td>${score ? '<span class="badge badge-green">Scored</span>' : '<span class="badge badge-yellow">Pending</span>'}</td>
         <td>
           ${score
-            ? `<span class="font-semibold ${isStage2 ? 'text-purple-600' : 'text-blue-600'}">${Number(score.totalScore || 0).toFixed(2)}</span>`
+            ? `<span class="font-semibold ${isStage2 ? 'text-purple-600' : 'text-blue-600'}">${UI.score(score.totalScore || 0)}</span>`
             : '<span class="text-slate-400">—</span>'}
         </td>
         <td class="whitespace-nowrap"><span class="text-slate-500">${date || '—'}</span></td>

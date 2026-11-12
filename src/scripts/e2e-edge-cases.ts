@@ -322,7 +322,7 @@ async function main() {
     check('special winners: judges refused (403)', (await api('GET', '/api/winners/special', t1)).status === 403);
 
     // ---------- Question types: Yes/No and scale questions, custom scale, yes/no share ----------
-    const round9 = (value: number) => Math.round(value * 1e9) / 1e9;
+    const round9 = (value: number) => Math.round(value * 1e12) / 1e12;
     const c0Yes = c0.questions.length;
     const typedStage1 = stage1.criteria.map((c: any, i: number) =>
       i === 0

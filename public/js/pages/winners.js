@@ -99,7 +99,7 @@ class WinnersPage {
   }
 
   static winnerCard(award, scoreLabel = 'Final score') {
-    const score = typeof award.winnerScore === 'number' ? award.winnerScore.toFixed(2) : '--';
+    const score = typeof award.winnerScore === 'number' ? UI.score(award.winnerScore) : '--';
     const judges = Number(award.judgeCount) || 0;
     return `
       <div class="card relative overflow-hidden border-amber-200">

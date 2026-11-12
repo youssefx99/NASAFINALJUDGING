@@ -275,7 +275,7 @@ class AdminPage {
               <td>${AdminPage.rank(index, team.hasScore)}</td>
               <td class="font-medium text-slate-900">${UI.escape(team.name)}</td>
               <td class="text-slate-600">${UI.escape(team.challenge)}</td>
-              <td>${team.hasScore ? `<span class="font-semibold text-blue-600">${team.averageScore.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+              <td>${team.hasScore ? `<span class="font-semibold text-blue-600">${UI.score(team.averageScore)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
               <td class="text-slate-500">${team.hasScore ? `${UI.escape(team.judgeCount)} judge${team.judgeCount === 1 ? '' : 's'}` : '–'}</td>
               <td>${AdminPage.statusBadge(team.hasScore)}</td>
             </tr>`,
@@ -306,10 +306,10 @@ class AdminPage {
               <td>${AdminPage.rank(index, team.hasAnyScore)}</td>
               <td class="font-medium text-slate-900">${UI.escape(team.name)}</td>
               <td class="text-slate-600">${UI.escape(team.challenge)}</td>
-              <td>${team.hasStage1Score ? `<span class="font-medium text-blue-600">${team.stage1Score.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
-              <td>${team.hasStage2Score ? `<span class="font-medium text-purple-600">${team.stage2BestScore.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+              <td>${team.hasStage1Score ? `<span class="font-medium text-blue-600">${UI.score(team.stage1Score)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+              <td>${team.hasStage2Score ? `<span class="font-medium text-purple-600">${UI.score(team.stage2BestScore)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
               <td class="text-xs text-slate-600">${team.hasStage2Score ? UI.escape(team.bestAward) : 'N/A'}</td>
-              <td>${team.hasAnyScore ? `<span class="text-base font-bold text-emerald-600">${team.finalScore.toFixed(2)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
+              <td>${team.hasAnyScore ? `<span class="text-base font-bold text-emerald-600">${UI.score(team.finalScore)}</span>` : '<span class="text-slate-400">No score</span>'}</td>
               <td>${AdminPage.statusBadge(team.hasAnyScore)}</td>
             </tr>`,
             )
